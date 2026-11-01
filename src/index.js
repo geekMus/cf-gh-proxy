@@ -18,7 +18,7 @@
 
 import { resolveConfig } from './config.js'
 import { FAVICON_SVG, renderDisguise, renderErrorPage, renderLanding } from './pages.js'
-import { buildTargetUrl, checkTarget, maybeJsdelivrUrl, maybeRewriteBlob, sanitizeUpstreamHeaders, withCacheHeaders } from './proxy.js'
+import { buildTargetUrl, checkTarget, maybeJsdelivrUrl, maybeRewriteBlob, sanitizeUpstreamHeaders } from './proxy.js'
 import { fetchFollowingRedirects } from './upstream.js'
 
 const CORS_HEADERS = {
@@ -141,7 +141,7 @@ async function route(request, env, ctx) {
     return new Response(FAVICON_SVG, {
       headers: {
         'content-type': 'image/svg+xml; charset=utf-8',
-        'cache-control': 'public, max-age=86400',
+        'cache-control': 'no-store',
         ...PAGE_HEADERS,
       },
     })
@@ -155,7 +155,7 @@ async function route(request, env, ctx) {
     return new Response('User-agent: *\nAllow: /\n', {
       headers: {
         'content-type': 'text/plain; charset=UTF-8',
-        'cache-control': 'public, max-age=86400',
+        'cache-control': 'no-store',
         ...PAGE_HEADERS,
       },
     })
@@ -391,69 +391,17 @@ async function handleProxy(request, target, cfg, ctx) {
   outHeaders.set('access-control-allow-origin', '*')
   outHeaders.set('access-control-expose-headers', '*')
 
-  // ---- 边缘缓存 -----------------------------------------------------------
-  // 200 才加公共缓存头：完整资源按 URL 缓存是安全的。
+  // ---- 缓存：一律不缓存 ---------------------------------------------------
+  // 这是一个代理下载服务：用户要的是「此刻上游的那个文件」，不是「几天前某个
+  // 边缘节点存下的副本」。所以每个响应都显式 `no-store`，也不留 `cdn-cache-control`。
   //
-  // 206 不加：它是「某个 Range 的片段」，而缓存键里没有 Range。一旦边缘把片段
-  // 当成这个 URL 的表示，后续整文件请求可能拿到半个文件。给 no-store 是明确的
-  // 「别缓存」。断点续传因此少一层边缘命中，换的是不会拿错字节。
-  //
-  // ALLOW_AUTH=1 时响应可能因人而异，同样一律私有：共享缓存不能把 A 的授权
-  // 内容发给 B。
-  if (res.status === 200 && method === 'GET') {
-    const personalized = cfg.allowAuth && (request.headers.has('authorization') || request.headers.has('cookie'))
-    const ttl = pickCacheTtl(target, cfg, res.url)
-    withCacheHeaders(outHeaders, ttl, res.headers, { noStore: personalized })
-  } else if (res.status === 206) {
-    outHeaders.set('cache-control', 'no-store')
-    outHeaders.set('vary', 'Range')
-    outHeaders.delete('cdn-cache-control')
-  }
+  // 早先按资源可变性分级缓存（200 给 300 秒 / release 资产给 86400 秒），代价是
+  // 刚发布的 release、刚推上分支的 raw 都可能拿到旧字节——对下载服务来说这是
+  // 错误答案，不是性能优化。206 本来就不缓存（缓存键里没有 Range），现在 200 也一样。
+  outHeaders.set('cache-control', 'no-store')
+  outHeaders.set('cdn-cache-control', 'no-store')
 
   return new Response(res.body, { status: res.status, headers: outHeaders })
-}
-
-/**
- * 可变资源用短缓存，不可变资源用长缓存。
- *
- * 判据看**最终响应**的地址：`github.com/.../releases/download/v1/x.zip` 会 302 到
- * `release-assets.githubusercontent.com`，只看请求地址会把它当可变资源、白拿 300 秒。
- * 唯一的例外是 `releases/latest/`：它指向「当前最新」，缓存一天会让新版本迟一天才出现。
- *
- * @param {URL} target 请求侧解析出来的目标地址
- * @param {ReturnType<typeof resolveConfig>} cfg
- * @param {string} [finalUrl] 跟随重定向之后的最终地址（res.url）
- */
-function pickCacheTtl(target, cfg, finalUrl) {
-  if (/\/releases\/latest\//.test(target.pathname)) return cfg.cacheTtl
-  let url = target
-  if (finalUrl) {
-    try {
-      url = new URL(finalUrl)
-    } catch {
-      /* 非法 url 就退回请求侧地址 */
-    }
-  }
-  const path = url.pathname
-  // release 资产走 release-assets 域名，天然不可变
-  if (url.hostname === 'release-assets.githubusercontent.com') return cfg.immutableCacheTtl
-  if (url.hostname === 'objects.githubusercontent.com') return cfg.immutableCacheTtl
-  // raw 用 40 位 commit SHA 时不可变；用分支名时可变的
-  if (url.hostname === 'raw.githubusercontent.com') {
-    const seg = path.split('/').filter(Boolean)
-    // /owner/repo/<ref>/<file...>
-    const ref = seg[2] || ''
-    if (/^[0-9a-f]{40}$/i.test(ref)) return cfg.immutableCacheTtl
-    return cfg.cacheTtl
-  }
-  // codeload 打包：按分支名会变，按 SHA 不变
-  if (url.hostname === 'codeload.github.com') {
-    if (/\/zip\/[0-9a-f]{40}$/i.test(path) || /\/tar\.gz\/[0-9a-f]{40}$/i.test(path)) {
-      return cfg.immutableCacheTtl
-    }
-    return cfg.cacheTtl
-  }
-  return cfg.cacheTtl
 }
 
 const SKIP_REQUEST_HEADERS = new Set([
@@ -475,6 +423,6 @@ const SKIP_REQUEST_HEADERS = new Set([
   'x-forwarded-proto',
   'x-real-ip',
   // Cloudflare 会自己处理压缩；转发客户端的 accept-encoding 会让上游按
-  // 客户端能力压缩，边缘缓存就无法共享了。
+  // 客户端能力压缩，Worker 还要再解压一遍才能交出去，没有好处。
   'accept-encoding',
 ])

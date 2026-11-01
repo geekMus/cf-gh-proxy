@@ -362,7 +362,7 @@ export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
 // 版本号只在「页面右下角」露一次：它是元信息，不是身份，和顶栏的品牌不是一回事；
 // 放顶栏会在 390px 上跟主题按钮抢位置。改版本时这里和 package.json 要一起改，
 // 测试会核对两者一致（见 test/pages.test.js）。
-export const VERSION = '1.2.12'
+export const VERSION = '1.2.13'
 
 // 右下角那行小字。放在 .stage 之后：.stage 有 flex:1，于是它自然贴在视口底部，
 // 右边缘与顶栏图标对齐，不占中间的操作区。

@@ -253,34 +253,5 @@ export function sanitizeUpstreamHeaders(upstream) {
   return out
 }
 
-/**
- * 给响应头加上 Cache-Control 与 CDN-Cache-Control。
- *
- * Cloudflare 的 `cf.cacheTtl` 只在请求 `cf` 选项时生效，而我们这里用的是
- * 「响应头驱动缓存」，所以两个头都要写：
- *   - `Cache-Control` 给浏览器与中间层；
- *   - `CDN-Cache-Control` 给 Cloudflare 边缘（优先级高于 Cache-Control）。
- *
- * @param {Headers} headers 已清洗的响应头（会被原地修改并返回）
- * @param {number} ttl 秒
- * @param {Headers} upstream 原始上游响应头（用来判断是否可缓存）
- */
-export function withCacheHeaders(headers, ttl, upstream, opts = {}) {
-  // 上游明确禁止缓存时尊重它；`no-cache` / `max-age=0` 同样意味着「别存」。
-  const cc = (upstream.get('cache-control') || '').toLowerCase()
-  if (
-    opts.noStore ||
-    cc.includes('no-store') ||
-    cc.includes('private') ||
-    cc.includes('no-cache') ||
-    /\bmax-age\s*=\s*0\b/.test(cc)
-  ) {
-    headers.set('Cache-Control', 'no-store')
-    headers.delete('CDN-Cache-Control')
-    return headers
-  }
-  headers.set('Cache-Control', `public, max-age=${ttl}`)
-  headers.set('CDN-Cache-Control', `public, max-age=${ttl}`)
-  // 已经是 200/206/301 这类可缓存状态才有意义；其他状态交给调用方判断
-  return headers
-}
+// 缓存头不在这里生成：这个 Worker 是代理下载服务，所有响应一律 `no-store`，
+// 由 index.js 的 handleProxy 统一写死——不留任何「按资源可变性分级」的口子。

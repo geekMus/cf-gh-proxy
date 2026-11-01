@@ -3,8 +3,6 @@ import worker from '../src/index.js'
 const base = {
   PREFIX: '/',
   JSDELIVR: '0',
-  CACHE_TTL: '300',
-  IMMUTABLE_CACHE_TTL: '86400',
   UPSTREAM_TIMEOUT: '30000',
   MAX_REDIRECTS: '5',
   ALLOW_AUTH: '0',

@@ -18,8 +18,6 @@ import worker from '../src/index.js'
 const ENV = {
   PREFIX: '/',
   JSDELIVR: '0',
-  CACHE_TTL: '300',
-  IMMUTABLE_CACHE_TTL: '86400',
   UPSTREAM_TIMEOUT: '30000',
   MAX_REDIRECTS: '5',
   ALLOW_AUTH: '0',
@@ -69,7 +67,7 @@ async function main() {
     ok('字节数正确', buf.length === expectSize, `${buf.length} / ${expectSize}`)
     ok('sha256 与官方一致', sha === expectSha, sha.slice(0, 16) + '…')
     ok('content-type 是文件而不是 html', (res.headers.get('content-type') || '').includes('octet-stream'), res.headers.get('content-type') || '(无)')
-    ok('带缓存头', (res.headers.get('cache-control') || '').includes('max-age'), res.headers.get('cache-control') || '(无)')
+    ok('明确不缓存', (res.headers.get('cache-control') || '').includes('no-store'), res.headers.get('cache-control') || '(无)')
     ok('耗时在合理范围', ms < 15000, `${ms}ms`)
   }
 

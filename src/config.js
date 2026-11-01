@@ -57,10 +57,6 @@ export function resolveConfig(env) {
   return {
     prefix: normalizePrefix(e.PREFIX),
     jsdelivr: bool(e.JSDELIVR, false),
-    // 可变资源（分支上的 raw / blob、codeload 打包）的边缘缓存秒数
-    cacheTtl: num(e.CACHE_TTL, 300),
-    // 不可变资源（release 资产、按 commit SHA 的 raw）的边缘缓存秒数
-    immutableCacheTtl: num(e.IMMUTABLE_CACHE_TTL, 86400),
     // 上游响应头到达前的等待上限（毫秒）；拿到响应头后不再计时，下载不受影响
     upstreamTimeout: num(e.UPSTREAM_TIMEOUT, 30000, { min: 1000 }),
     maxRedirects: num(e.MAX_REDIRECTS, 5),

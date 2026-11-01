@@ -82,8 +82,6 @@ curl -sI "https://gh.example.com/https://raw.githubusercontent.com/geekMus/cf-gh
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PREFIX` | `/` | 路由前缀。填 `/gh` 就是 `https://域名/gh/https://github.com/...` |
-| `CACHE_TTL` | `300` | 可变资源的边缘缓存秒数 |
-| `IMMUTABLE_CACHE_TTL` | `86400` | 不可变资源（release 资产、按 SHA 的 raw）的缓存秒数 |
 | `UPSTREAM_TIMEOUT` | `30000` | 等上游响应头的上限（毫秒），不影响大文件下载 |
 | `MAX_REDIRECTS` | `5` | 最多跟几跳重定向 |
 | `ALLOW_AUTH` | `0` | 是否转发访问者的 Cookie / Authorization。公开服务保持 `0` |

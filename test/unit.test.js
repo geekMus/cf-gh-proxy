@@ -1,12 +1,12 @@
 'use strict'
 
-// 单元测试：不需要网络，用桩 fetch 覆盖 URL 构建、白名单、重定向跟随、缓存头。
+// 单元测试：不需要网络，用桩 fetch 覆盖 URL 构建、白名单、重定向跟随、响应头清洗。
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { resolveConfig } from '../src/config.js'
-import { buildTargetUrl, isAllowedTarget, sanitizeUpstreamHeaders, withCacheHeaders } from '../src/proxy.js'
+import { buildTargetUrl, isAllowedTarget, sanitizeUpstreamHeaders } from '../src/proxy.js'
 import worker from '../src/index.js'
 
 // ---------------------------------------------------------------------------
@@ -36,9 +36,6 @@ test('resolveConfig：布尔与数字的容错', () => {
   assert.equal(resolveConfig({}).jsdelivr, false)
 
   // 非法数字回落默认值
-  assert.equal(resolveConfig({ CACHE_TTL: 'abc' }).cacheTtl, 300)
-  assert.equal(resolveConfig({ CACHE_TTL: '-1' }).cacheTtl, 300)
-  assert.equal(resolveConfig({ CACHE_TTL: '60' }).cacheTtl, 60)
   // upstreamTimeout 有最小值保护
   assert.equal(resolveConfig({ UPSTREAM_TIMEOUT: '10' }).upstreamTimeout, 30000)
   assert.equal(resolveConfig({ UPSTREAM_TIMEOUT: '5000' }).upstreamTimeout, 5000)
@@ -167,24 +164,8 @@ test('sanitizeUpstreamHeaders：保留 etag 与 last-modified', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 缓存头
+// 响应头清洗
 // ---------------------------------------------------------------------------
-
-test('withCacheHeaders：写入 Cache-Control 与 CDN-Cache-Control', () => {
-  const h = new Headers()
-  const up = new Headers({ 'cache-control': 'public' })
-  const out = withCacheHeaders(h, 300, up)
-  assert.equal(out.get('cache-control'), 'public, max-age=300')
-  assert.equal(out.get('cdn-cache-control'), 'public, max-age=300')
-})
-
-test('withCacheHeaders：尊重上游 no-store', () => {
-  const h = new Headers()
-  const up = new Headers({ 'cache-control': 'no-store' })
-  const out = withCacheHeaders(h, 300, up)
-  assert.equal(out.get('cache-control'), 'no-store')
-  assert.equal(out.has('cdn-cache-control'), false)
-})
 
 // ---------------------------------------------------------------------------
 // 转发的请求头
@@ -274,7 +255,7 @@ test('Range + 弱 ETag（压缩表示，content-encoding 被边缘抹掉）同�
 })
 
 // ---------------------------------------------------------------------------
-// 首页与缓存 TTL 的边界
+// 首页与缓存边界
 // ---------------------------------------------------------------------------
 
 test('根路径只带查询串（/?cb=123）仍给首页，不当作资源路径', async () => {
@@ -283,46 +264,36 @@ test('根路径只带查询串（/?cb=123）仍给首页，不当作资源路径
   assert.match(res.headers.get('content-type') || '', /text\/html/)
 })
 
-test('release 资产按最终地址判 TTL：跟到 release-assets 后是不可变缓存', async () => {
+test('代理响应一律不缓存：200 与 206 都是 no-store，不留 cdn-cache-control', async () => {
   const realFetch = globalThis.fetch
-  globalThis.fetch = async () => {
-    const r = new Response('BYTES', { status: 200, headers: { 'content-type': 'application/octet-stream' } })
-    // 只有真实 follow 之后才会有 res.url；桩里手动补上
-    Object.defineProperty(r, 'url', {
-      value: 'https://release-assets.githubusercontent.com/github-production-release-asset/1/x.zip',
+  let status = 200
+  globalThis.fetch = async () =>
+    new Response('BYTES', {
+      status,
+      headers: { 'content-type': 'application/octet-stream', 'cache-control': 'public, max-age=86400' },
     })
-    return r
-  }
   try {
-    const res = await worker.fetch(
+    const ok = await worker.fetch(
       new Request('https://gh.test/https://github.com/o/r/releases/download/v1/x.zip'),
       {},
       { waitUntil() {} }
     )
-    assert.equal(res.status, 200)
-    assert.match(res.headers.get('cache-control') || '', /max-age=86400/, 'release 资产应是不可变缓存')
-  } finally {
-    globalThis.fetch = realFetch
-  }
-})
+    assert.equal(ok.status, 200)
+    // 上游说缓存一天也不行：这个服务只交付「此刻上游的字节」
+    assert.equal(ok.headers.get('cache-control'), 'no-store')
+    assert.equal(ok.headers.get('cdn-cache-control'), 'no-store')
 
-test('releases/latest 不按不可变缓存：新版本不能迟一天才出现', async () => {
-  const realFetch = globalThis.fetch
-  globalThis.fetch = async () => {
-    const r = new Response('BYTES', { status: 200, headers: { 'content-type': 'application/octet-stream' } })
-    Object.defineProperty(r, 'url', {
-      value: 'https://release-assets.githubusercontent.com/github-production-release-asset/1/x.zip',
-    })
-    return r
-  }
-  try {
-    const res = await worker.fetch(
-      new Request('https://gh.test/https://github.com/o/r/releases/latest/download/x.zip'),
+    status = 206
+    const ranged = await worker.fetch(
+      new Request('https://gh.test/https://github.com/o/r/releases/download/v1/x.zip', {
+        headers: { Range: 'bytes=0-3' },
+      }),
       {},
       { waitUntil() {} }
     )
-    assert.equal(res.status, 200)
-    assert.match(res.headers.get('cache-control') || '', /max-age=300/, 'latest 必须走短缓存')
+    assert.equal(ranged.status, 206)
+    assert.equal(ranged.headers.get('cache-control'), 'no-store')
+    assert.equal(ranged.headers.get('cdn-cache-control'), 'no-store')
   } finally {
     globalThis.fetch = realFetch
   }
@@ -354,101 +325,4 @@ test('首页明确不入缓存（页面要跟着部署走），安全头照旧',
   assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
   assert.equal(res.headers.get('x-frame-options'), 'DENY')
   assert.match(res.headers.get('strict-transport-security') || '', /max-age=31536000/)
-})
-
-// ---------------------------------------------------------------------------
-// 重定向链记忆：同一个资产地址第二次直接打签名地址，不再重走两跳 302
-// ---------------------------------------------------------------------------
-
-function fakeCaches() {
-  const store = new Map()
-  const key = (req) => (typeof req === 'string' ? req : req.url)
-  return {
-    store,
-    default: {
-      async match(req) {
-        const hit = store.get(key(req))
-        return hit ? hit.clone() : undefined
-      },
-      async put(req, res) {
-        store.set(key(req), res.clone())
-      },
-      async delete(req) {
-        return store.delete(key(req))
-      },
-    },
-  }
-}
-
-const ASSET = 'https://gh.test/o/r/releases/download/v1/x.zip'
-const ASSET_TARGET = 'https://github.com/o/r/releases/download/v1/x.zip'
-const SIGNED = 'https://objects.githubusercontent.com/abc?sig=1'
-
-test('重定向链只走一次：第二次直接用记下来的签名地址', async () => {
-  const cache = fakeCaches()
-  const calls = []
-  const realCaches = globalThis.caches
-  const realFetch = globalThis.fetch
-  globalThis.caches = cache
-  globalThis.fetch = async (input) => {
-    const url = typeof input === 'string' ? input : input.url
-    calls.push(url)
-    if (url === ASSET_TARGET) {
-      return new Response(null, { status: 302, headers: { location: SIGNED } })
-    }
-    if (url.startsWith(SIGNED)) return new Response('asset', { status: 200 })
-    return new Response('unexpected ' + url, { status: 500 })
-  }
-  try {
-    const first = await worker.fetch(new Request(ASSET), {}, { waitUntil() {} })
-    assert.equal(await first.text(), 'asset')
-    assert.equal(calls.length, 2, '第一次要走完两跳')
-
-    const second = await worker.fetch(new Request(ASSET), {}, { waitUntil() {} })
-    assert.equal(await second.text(), 'asset')
-    assert.equal(calls.length, 3, '第二次只发一个请求')
-    assert.equal(calls[2], SIGNED, '第二次直接打签名地址，省掉中间那跳')
-  } finally {
-    globalThis.caches = realCaches
-    globalThis.fetch = realFetch
-  }
-})
-
-test('签名过期（403）：丢掉记忆，重走整条链并把新地址记下来', async () => {
-  const cache = fakeCaches()
-  const calls = []
-  const realCaches = globalThis.caches
-  const realFetch = globalThis.fetch
-  globalThis.caches = cache
-  let sig = 0
-  let expireNext = false
-  let expired = false
-  globalThis.fetch = async (input) => {
-    const url = typeof input === 'string' ? input : input.url
-    calls.push(url)
-    if (url === ASSET_TARGET) {
-      sig += 1
-      return new Response(null, { status: 302, headers: { location: `${SIGNED}&v=${sig}` } })
-    }
-    if (url.startsWith(SIGNED) && expireNext && !expired) {
-      expired = true
-      return new Response('expired', { status: 403 })
-    }
-    if (url.startsWith(SIGNED)) return new Response('asset', { status: 200 })
-    return new Response('unexpected ' + url, { status: 500 })
-  }
-  try {
-    await (await worker.fetch(new Request(ASSET), {}, { waitUntil() {} })).text()
-    assert.equal(calls.at(-1), `${SIGNED}&v=1`, '第一次记下签名地址')
-    expireNext = true
-    const res = await worker.fetch(new Request(ASSET), {}, { waitUntil() {} })
-    assert.equal(res.status, 200)
-    assert.equal(await res.text(), 'asset')
-    assert.equal(calls.at(-3), `${SIGNED}&v=1`, '先用记下的地址试一次，过期了')
-    assert.equal(calls.at(-2), ASSET_TARGET, '签名失效后要回到最初的地址重走')
-    assert.equal(calls.at(-1), `${SIGNED}&v=2`, '并记住新签名')
-  } finally {
-    globalThis.caches = realCaches
-    globalThis.fetch = realFetch
-  }
 })

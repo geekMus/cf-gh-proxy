@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.12 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.13 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -76,10 +76,6 @@ function resolveConfig(env) {
   return {
     prefix: normalizePrefix(e.PREFIX),
     jsdelivr: bool(e.JSDELIVR, false),
-    // 可变资源（分支上的 raw / blob、codeload 打包）的边缘缓存秒数
-    cacheTtl: num(e.CACHE_TTL, 300),
-    // 不可变资源（release 资产、按 commit SHA 的 raw）的边缘缓存秒数
-    immutableCacheTtl: num(e.IMMUTABLE_CACHE_TTL, 86400),
     // 上游响应头到达前的等待上限（毫秒）；拿到响应头后不再计时，下载不受影响
     upstreamTimeout: num(e.UPSTREAM_TIMEOUT, 30000, { min: 1000 }),
     maxRedirects: num(e.MAX_REDIRECTS, 5),
@@ -637,37 +633,8 @@ function sanitizeUpstreamHeaders(upstream) {
   return out
 }
 
-/**
- * 给响应头加上 Cache-Control 与 CDN-Cache-Control。
- *
- * Cloudflare 的 `cf.cacheTtl` 只在请求 `cf` 选项时生效，而我们这里用的是
- * 「响应头驱动缓存」，所以两个头都要写：
- *   - `Cache-Control` 给浏览器与中间层；
- *   - `CDN-Cache-Control` 给 Cloudflare 边缘（优先级高于 Cache-Control）。
- *
- * @param {Headers} headers 已清洗的响应头（会被原地修改并返回）
- * @param {number} ttl 秒
- * @param {Headers} upstream 原始上游响应头（用来判断是否可缓存）
- */
-function withCacheHeaders(headers, ttl, upstream, opts = {}) {
-  // 上游明确禁止缓存时尊重它；`no-cache` / `max-age=0` 同样意味着「别存」。
-  const cc = (upstream.get('cache-control') || '').toLowerCase()
-  if (
-    opts.noStore ||
-    cc.includes('no-store') ||
-    cc.includes('private') ||
-    cc.includes('no-cache') ||
-    /\bmax-age\s*=\s*0\b/.test(cc)
-  ) {
-    headers.set('Cache-Control', 'no-store')
-    headers.delete('CDN-Cache-Control')
-    return headers
-  }
-  headers.set('Cache-Control', `public, max-age=${ttl}`)
-  headers.set('CDN-Cache-Control', `public, max-age=${ttl}`)
-  // 已经是 200/206/301 这类可缓存状态才有意义；其他状态交给调用方判断
-  return headers
-}
+// 缓存头不在这里生成：这个 Worker 是代理下载服务，所有响应一律 `no-store`，
+// 由 index.js 的 handleProxy 统一写死——不留任何「按资源可变性分级」的口子。
 
 // ============================================================================
 // 模块：src/upstream.js —— 跟随重定向
@@ -688,60 +655,14 @@ function withCacheHeaders(headers, ttl, upstream, opts = {}) {
 // ============================================================================
 
 // ============================================================================
-// 一条 release 资产要走三跳：github.com → release-assets → objects。
-// 后两跳是签名地址，几分钟内有效；而浏览器断点续传、下载器、播放器会对同一个文件
-// 反复发请求，每一发都重走这三跳——「拿到第一个字节」就要 1.5 秒，其中约 0.9 秒
-// 花在这条链上（实测：直连 objects 的 TTFB 0.5 s，走满三跳 1.5 s）。
-// 所以把「这条地址最终落在哪」记在边缘缓存里一小会儿：下一次直接打签名地址。
+// 不做「重定向结果记忆」。
+//
+// v1.2.12 曾经把「这条地址最终落在哪」写进边缘缓存 180 秒，第二次直接打签名地址。
+// 那 0.9 秒确实省下来了，但它本质上是一份缓存：签名地址指向的是「当时那个对象」，
+// 上游要是重新打包、换签名、或者对象被替换，客户端就会拿到旧字节。
+// 这个项目是代理下载服务，用户要的是「此刻上游的那个文件」，所以这份记忆被删掉了。
+// 每次请求都老老实实把 github.com → release-assets → objects 走完。
 // ============================================================================
-
-const RESOLVE_TTL = 180
-const RESOLVE_ORIGIN = 'https://resolve.cf-gh-proxy.invalid/'
-
-/** 边缘缓存（预览与测试里没有，就纯当作不缓存） */
-function resolveCache() {
-  return globalThis.caches?.default || null
-}
-
-function resolveKey(href) {
-  return new Request(RESOLVE_ORIGIN + '?u=' + encodeURIComponent(href))
-}
-
-async function readResolved(href) {
-  const cache = resolveCache()
-  if (!cache) return ''
-  try {
-    const hit = await cache.match(resolveKey(href))
-    if (!hit) return ''
-    const body = await hit.json()
-    return typeof body?.url === 'string' ? body.url : ''
-  } catch {
-    return ''
-  }
-}
-
-async function writeResolved(href, url) {
-  const cache = resolveCache()
-  if (!cache || !url || url === href) return
-  try {
-    await cache.put(
-      resolveKey(href),
-      new Response(JSON.stringify({ url }), {
-        headers: { 'content-type': 'application/json', 'cache-control': 'max-age=' + RESOLVE_TTL },
-      })
-    )
-  } catch {
-    /* 只是加速手段，失败就当没这回事 */
-  }
-}
-
-async function forgetResolved(href) {
-  try {
-    await resolveCache()?.delete(resolveKey(href))
-  } catch {
-    /* 同上 */
-  }
-}
 
 /**
  * 带总时限地取上游响应，自己跟随重定向。
@@ -756,32 +677,6 @@ async function forgetResolved(href) {
 async function fetchFollowingRedirects(href, init, timeoutMs, maxRedirects, fetchImpl = fetch) {
   let current = href
   let currentInit = { ...init, redirect: 'manual' }
-  // 带请求体（POST/PUT）的请求不能走快路：请求体是流，只能发一次
-  const method = (init.method || 'GET').toUpperCase()
-  const reusable = !init.body && (method === 'GET' || method === 'HEAD')
-
-  if (reusable) {
-    const resolved = await readResolved(href)
-    if (resolved && resolved !== href) {
-      const ac = new AbortController()
-      const timer = setTimeout(() => ac.abort(), timeoutMs)
-      try {
-        const res = await fetchImpl(resolved, { ...init, redirect: 'manual', signal: ac.signal })
-        if (res.status === 200 || res.status === 206) return res
-        // 签名过期、对象被替换：这条记忆不可信了，丢掉重走整条链
-        try {
-          await res.body?.cancel()
-        } catch {
-          /* 忽略 */
-        }
-        await forgetResolved(href)
-      } catch {
-        await forgetResolved(href)
-      } finally {
-        clearTimeout(timer)
-      }
-    }
-  }
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const ac = new AbortController()
@@ -824,7 +719,6 @@ async function fetchFollowingRedirects(href, init, timeoutMs, maxRedirects, fetc
       }
       continue
     }
-    if (reusable && res.ok && current !== href) await writeResolved(href, res.url || current)
     return res
   }
   return null
@@ -1220,7 +1114,7 @@ export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
 // 版本号只在「页面右下角」露一次：它是元信息，不是身份，和顶栏的品牌不是一回事；
 // 放顶栏会在 390px 上跟主题按钮抢位置。改版本时这里和 package.json 要一起改，
 // 测试会核对两者一致（见 test/pages.test.js）。
-export const VERSION = '1.2.12'
+export const VERSION = '1.2.13'
 
 // 右下角那行小字。放在 .stage 之后：.stage 有 flex:1，于是它自然贴在视口底部，
 // 右边缘与顶栏图标对齐，不占中间的操作区。
@@ -1702,7 +1596,7 @@ async function route(request, env, ctx) {
     return new Response(FAVICON_SVG, {
       headers: {
         'content-type': 'image/svg+xml; charset=utf-8',
-        'cache-control': 'public, max-age=86400',
+        'cache-control': 'no-store',
         ...PAGE_HEADERS,
       },
     })
@@ -1716,7 +1610,7 @@ async function route(request, env, ctx) {
     return new Response('User-agent: *\nAllow: /\n', {
       headers: {
         'content-type': 'text/plain; charset=UTF-8',
-        'cache-control': 'public, max-age=86400',
+        'cache-control': 'no-store',
         ...PAGE_HEADERS,
       },
     })
@@ -1952,69 +1846,17 @@ async function handleProxy(request, target, cfg, ctx) {
   outHeaders.set('access-control-allow-origin', '*')
   outHeaders.set('access-control-expose-headers', '*')
 
-  // ---- 边缘缓存 -----------------------------------------------------------
-  // 200 才加公共缓存头：完整资源按 URL 缓存是安全的。
+  // ---- 缓存：一律不缓存 ---------------------------------------------------
+  // 这是一个代理下载服务：用户要的是「此刻上游的那个文件」，不是「几天前某个
+  // 边缘节点存下的副本」。所以每个响应都显式 `no-store`，也不留 `cdn-cache-control`。
   //
-  // 206 不加：它是「某个 Range 的片段」，而缓存键里没有 Range。一旦边缘把片段
-  // 当成这个 URL 的表示，后续整文件请求可能拿到半个文件。给 no-store 是明确的
-  // 「别缓存」。断点续传因此少一层边缘命中，换的是不会拿错字节。
-  //
-  // ALLOW_AUTH=1 时响应可能因人而异，同样一律私有：共享缓存不能把 A 的授权
-  // 内容发给 B。
-  if (res.status === 200 && method === 'GET') {
-    const personalized = cfg.allowAuth && (request.headers.has('authorization') || request.headers.has('cookie'))
-    const ttl = pickCacheTtl(target, cfg, res.url)
-    withCacheHeaders(outHeaders, ttl, res.headers, { noStore: personalized })
-  } else if (res.status === 206) {
-    outHeaders.set('cache-control', 'no-store')
-    outHeaders.set('vary', 'Range')
-    outHeaders.delete('cdn-cache-control')
-  }
+  // 早先按资源可变性分级缓存（200 给 300 秒 / release 资产给 86400 秒），代价是
+  // 刚发布的 release、刚推上分支的 raw 都可能拿到旧字节——对下载服务来说这是
+  // 错误答案，不是性能优化。206 本来就不缓存（缓存键里没有 Range），现在 200 也一样。
+  outHeaders.set('cache-control', 'no-store')
+  outHeaders.set('cdn-cache-control', 'no-store')
 
   return new Response(res.body, { status: res.status, headers: outHeaders })
-}
-
-/**
- * 可变资源用短缓存，不可变资源用长缓存。
- *
- * 判据看**最终响应**的地址：`github.com/.../releases/download/v1/x.zip` 会 302 到
- * `release-assets.githubusercontent.com`，只看请求地址会把它当可变资源、白拿 300 秒。
- * 唯一的例外是 `releases/latest/`：它指向「当前最新」，缓存一天会让新版本迟一天才出现。
- *
- * @param {URL} target 请求侧解析出来的目标地址
- * @param {ReturnType<typeof resolveConfig>} cfg
- * @param {string} [finalUrl] 跟随重定向之后的最终地址（res.url）
- */
-function pickCacheTtl(target, cfg, finalUrl) {
-  if (/\/releases\/latest\//.test(target.pathname)) return cfg.cacheTtl
-  let url = target
-  if (finalUrl) {
-    try {
-      url = new URL(finalUrl)
-    } catch {
-      /* 非法 url 就退回请求侧地址 */
-    }
-  }
-  const path = url.pathname
-  // release 资产走 release-assets 域名，天然不可变
-  if (url.hostname === 'release-assets.githubusercontent.com') return cfg.immutableCacheTtl
-  if (url.hostname === 'objects.githubusercontent.com') return cfg.immutableCacheTtl
-  // raw 用 40 位 commit SHA 时不可变；用分支名时可变的
-  if (url.hostname === 'raw.githubusercontent.com') {
-    const seg = path.split('/').filter(Boolean)
-    // /owner/repo/<ref>/<file...>
-    const ref = seg[2] || ''
-    if (/^[0-9a-f]{40}$/i.test(ref)) return cfg.immutableCacheTtl
-    return cfg.cacheTtl
-  }
-  // codeload 打包：按分支名会变，按 SHA 不变
-  if (url.hostname === 'codeload.github.com') {
-    if (/\/zip\/[0-9a-f]{40}$/i.test(path) || /\/tar\.gz\/[0-9a-f]{40}$/i.test(path)) {
-      return cfg.immutableCacheTtl
-    }
-    return cfg.cacheTtl
-  }
-  return cfg.cacheTtl
 }
 
 const SKIP_REQUEST_HEADERS = new Set([
@@ -2036,6 +1878,6 @@ const SKIP_REQUEST_HEADERS = new Set([
   'x-forwarded-proto',
   'x-real-ip',
   // Cloudflare 会自己处理压缩；转发客户端的 accept-encoding 会让上游按
-  // 客户端能力压缩，边缘缓存就无法共享了。
+  // 客户端能力压缩，Worker 还要再解压一遍才能交出去，没有好处。
   'accept-encoding',
 ])

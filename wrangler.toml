@@ -13,11 +13,6 @@ PREFIX = "/"
 # 分支文件是否重定向到 jsDelivr（1 = 开，0 = 关）
 JSDELIVR = "0"
 
-# 边缘缓存秒数：可变资源（分支上的 raw、按分支名的打包）
-CACHE_TTL = "300"
-# 不可变资源（release 资产、按 commit SHA 的 raw）
-IMMUTABLE_CACHE_TTL = "86400"
-
 # 上游响应头到达前的等待上限（毫秒）。拿到响应头后不再计时，下载大文件不受影响。
 UPSTREAM_TIMEOUT = "30000"
 # 最多跟随几跳重定向

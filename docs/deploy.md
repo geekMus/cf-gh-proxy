@@ -123,8 +123,6 @@ curl -sI "https://gh.mus.pp.ua/https://github.com/geekMus/container-autoupdate/r
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PREFIX` | `/` | 路由前缀。`/` 表示直接挂在根上；填 `/gh` 就是 `https://域名/gh/https://github.com/...` |
-| `CACHE_TTL` | `300` | 可变资源（分支上的 raw、按分支名的打包）的边缘缓存秒数 |
-| `IMMUTABLE_CACHE_TTL` | `86400` | 不可变资源（release 资产、按 commit SHA 的 raw）的缓存秒数。`releases/latest/` 不看这个值——它指向「当前最新」，永远走 `CACHE_TTL` |
 | `UPSTREAM_TIMEOUT` | `30000` | 等上游响应头的上限（毫秒）。**只管到拿到响应头为止**，下载大文件不受这个限制 |
 | `MAX_REDIRECTS` | `5` | 最多跟几跳重定向 |
 | `ALLOW_AUTH` | `0` | 是否把访问者的 `Cookie` / `Authorization` 转发给上游。公开服务请保持 `0` |

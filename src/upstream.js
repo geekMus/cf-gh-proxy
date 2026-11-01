@@ -15,60 +15,14 @@
 // ============================================================================
 
 // ============================================================================
-// 一条 release 资产要走三跳：github.com → release-assets → objects。
-// 后两跳是签名地址，几分钟内有效；而浏览器断点续传、下载器、播放器会对同一个文件
-// 反复发请求，每一发都重走这三跳——「拿到第一个字节」就要 1.5 秒，其中约 0.9 秒
-// 花在这条链上（实测：直连 objects 的 TTFB 0.5 s，走满三跳 1.5 s）。
-// 所以把「这条地址最终落在哪」记在边缘缓存里一小会儿：下一次直接打签名地址。
+// 不做「重定向结果记忆」。
+//
+// v1.2.12 曾经把「这条地址最终落在哪」写进边缘缓存 180 秒，第二次直接打签名地址。
+// 那 0.9 秒确实省下来了，但它本质上是一份缓存：签名地址指向的是「当时那个对象」，
+// 上游要是重新打包、换签名、或者对象被替换，客户端就会拿到旧字节。
+// 这个项目是代理下载服务，用户要的是「此刻上游的那个文件」，所以这份记忆被删掉了。
+// 每次请求都老老实实把 github.com → release-assets → objects 走完。
 // ============================================================================
-
-const RESOLVE_TTL = 180
-const RESOLVE_ORIGIN = 'https://resolve.cf-gh-proxy.invalid/'
-
-/** 边缘缓存（预览与测试里没有，就纯当作不缓存） */
-function resolveCache() {
-  return globalThis.caches?.default || null
-}
-
-function resolveKey(href) {
-  return new Request(RESOLVE_ORIGIN + '?u=' + encodeURIComponent(href))
-}
-
-async function readResolved(href) {
-  const cache = resolveCache()
-  if (!cache) return ''
-  try {
-    const hit = await cache.match(resolveKey(href))
-    if (!hit) return ''
-    const body = await hit.json()
-    return typeof body?.url === 'string' ? body.url : ''
-  } catch {
-    return ''
-  }
-}
-
-async function writeResolved(href, url) {
-  const cache = resolveCache()
-  if (!cache || !url || url === href) return
-  try {
-    await cache.put(
-      resolveKey(href),
-      new Response(JSON.stringify({ url }), {
-        headers: { 'content-type': 'application/json', 'cache-control': 'max-age=' + RESOLVE_TTL },
-      })
-    )
-  } catch {
-    /* 只是加速手段，失败就当没这回事 */
-  }
-}
-
-async function forgetResolved(href) {
-  try {
-    await resolveCache()?.delete(resolveKey(href))
-  } catch {
-    /* 同上 */
-  }
-}
 
 /**
  * 带总时限地取上游响应，自己跟随重定向。
@@ -83,32 +37,6 @@ async function forgetResolved(href) {
 export async function fetchFollowingRedirects(href, init, timeoutMs, maxRedirects, fetchImpl = fetch) {
   let current = href
   let currentInit = { ...init, redirect: 'manual' }
-  // 带请求体（POST/PUT）的请求不能走快路：请求体是流，只能发一次
-  const method = (init.method || 'GET').toUpperCase()
-  const reusable = !init.body && (method === 'GET' || method === 'HEAD')
-
-  if (reusable) {
-    const resolved = await readResolved(href)
-    if (resolved && resolved !== href) {
-      const ac = new AbortController()
-      const timer = setTimeout(() => ac.abort(), timeoutMs)
-      try {
-        const res = await fetchImpl(resolved, { ...init, redirect: 'manual', signal: ac.signal })
-        if (res.status === 200 || res.status === 206) return res
-        // 签名过期、对象被替换：这条记忆不可信了，丢掉重走整条链
-        try {
-          await res.body?.cancel()
-        } catch {
-          /* 忽略 */
-        }
-        await forgetResolved(href)
-      } catch {
-        await forgetResolved(href)
-      } finally {
-        clearTimeout(timer)
-      }
-    }
-  }
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const ac = new AbortController()
@@ -151,7 +79,6 @@ export async function fetchFollowingRedirects(href, init, timeoutMs, maxRedirect
       }
       continue
     }
-    if (reusable && res.ok && current !== href) await writeResolved(href, res.url || current)
     return res
   }
   return null

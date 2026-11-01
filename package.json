@@ -1,6 +1,6 @@
 {
   "name": "cf-gh-proxy",
-  "version": "1.2.12",
+  "version": "1.2.13",
   "private": true,
   "type": "module",
   "description": "GitHub 文件加速 Cloudflare Worker：把 release / archive / raw 链接走 Cloudflare 边缘",
@@ -39,10 +39,7 @@
         "description": "设为 `1` 时，把 `blob` / `raw` 路径改走 jsDelivr CDN。只对固定 tag 或 commit SHA 生效，分支名（如 `main`）不改写——jsDelivr 对分支缓存激进，会返回旧内容。"
       },
       "CACHE_TTL": {
-        "description": "普通路径的边缘缓存秒数，默认 `300`。"
-      },
-      "IMMUTABLE_CACHE_TTL": {
-        "description": "带版本号或 commit SHA 的路径（内容不会变）的缓存秒数，默认 `86400`。"
+        "description": "已废弃：这个服务不缓存任何响应，所有回包都是 `no-store`。留着这个键只是为了让旧配置读起来不报错，写不写都一样。"
       },
       "UPSTREAM_TIMEOUT": {
         "description": "单次回源超时毫秒数，默认 `30000`。超时不会卡住请求，会返回 502（上游没能在时限内应答）。"
