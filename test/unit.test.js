@@ -355,3 +355,100 @@ test('首页明确不入缓存（页面要跟着部署走），安全头照旧',
   assert.equal(res.headers.get('x-frame-options'), 'DENY')
   assert.match(res.headers.get('strict-transport-security') || '', /max-age=31536000/)
 })
+
+// ---------------------------------------------------------------------------
+// 重定向链记忆：同一个资产地址第二次直接打签名地址，不再重走两跳 302
+// ---------------------------------------------------------------------------
+
+function fakeCaches() {
+  const store = new Map()
+  const key = (req) => (typeof req === 'string' ? req : req.url)
+  return {
+    store,
+    default: {
+      async match(req) {
+        const hit = store.get(key(req))
+        return hit ? hit.clone() : undefined
+      },
+      async put(req, res) {
+        store.set(key(req), res.clone())
+      },
+      async delete(req) {
+        return store.delete(key(req))
+      },
+    },
+  }
+}
+
+const ASSET = 'https://gh.test/o/r/releases/download/v1/x.zip'
+const ASSET_TARGET = 'https://github.com/o/r/releases/download/v1/x.zip'
+const SIGNED = 'https://objects.githubusercontent.com/abc?sig=1'
+
+test('重定向链只走一次：第二次直接用记下来的签名地址', async () => {
+  const cache = fakeCaches()
+  const calls = []
+  const realCaches = globalThis.caches
+  const realFetch = globalThis.fetch
+  globalThis.caches = cache
+  globalThis.fetch = async (input) => {
+    const url = typeof input === 'string' ? input : input.url
+    calls.push(url)
+    if (url === ASSET_TARGET) {
+      return new Response(null, { status: 302, headers: { location: SIGNED } })
+    }
+    if (url.startsWith(SIGNED)) return new Response('asset', { status: 200 })
+    return new Response('unexpected ' + url, { status: 500 })
+  }
+  try {
+    const first = await worker.fetch(new Request(ASSET), {}, { waitUntil() {} })
+    assert.equal(await first.text(), 'asset')
+    assert.equal(calls.length, 2, '第一次要走完两跳')
+
+    const second = await worker.fetch(new Request(ASSET), {}, { waitUntil() {} })
+    assert.equal(await second.text(), 'asset')
+    assert.equal(calls.length, 3, '第二次只发一个请求')
+    assert.equal(calls[2], SIGNED, '第二次直接打签名地址，省掉中间那跳')
+  } finally {
+    globalThis.caches = realCaches
+    globalThis.fetch = realFetch
+  }
+})
+
+test('签名过期（403）：丢掉记忆，重走整条链并把新地址记下来', async () => {
+  const cache = fakeCaches()
+  const calls = []
+  const realCaches = globalThis.caches
+  const realFetch = globalThis.fetch
+  globalThis.caches = cache
+  let sig = 0
+  let expireNext = false
+  let expired = false
+  globalThis.fetch = async (input) => {
+    const url = typeof input === 'string' ? input : input.url
+    calls.push(url)
+    if (url === ASSET_TARGET) {
+      sig += 1
+      return new Response(null, { status: 302, headers: { location: `${SIGNED}&v=${sig}` } })
+    }
+    if (url.startsWith(SIGNED) && expireNext && !expired) {
+      expired = true
+      return new Response('expired', { status: 403 })
+    }
+    if (url.startsWith(SIGNED)) return new Response('asset', { status: 200 })
+    return new Response('unexpected ' + url, { status: 500 })
+  }
+  try {
+    await (await worker.fetch(new Request(ASSET), {}, { waitUntil() {} })).text()
+    assert.equal(calls.at(-1), `${SIGNED}&v=1`, '第一次记下签名地址')
+    expireNext = true
+    const res = await worker.fetch(new Request(ASSET), {}, { waitUntil() {} })
+    assert.equal(res.status, 200)
+    assert.equal(await res.text(), 'asset')
+    assert.equal(calls.at(-3), `${SIGNED}&v=1`, '先用记下的地址试一次，过期了')
+    assert.equal(calls.at(-2), ASSET_TARGET, '签名失效后要回到最初的地址重走')
+    assert.equal(calls.at(-1), `${SIGNED}&v=2`, '并记住新签名')
+  } finally {
+    globalThis.caches = realCaches
+    globalThis.fetch = realFetch
+  }
+})

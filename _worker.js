@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.11 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.12 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -687,6 +687,62 @@ function withCacheHeaders(headers, ttl, upstream, opts = {}) {
 //   2. 需要在上游卡住时主动放弃，而不是让请求挂到平台超时。
 // ============================================================================
 
+// ============================================================================
+// 一条 release 资产要走三跳：github.com → release-assets → objects。
+// 后两跳是签名地址，几分钟内有效；而浏览器断点续传、下载器、播放器会对同一个文件
+// 反复发请求，每一发都重走这三跳——「拿到第一个字节」就要 1.5 秒，其中约 0.9 秒
+// 花在这条链上（实测：直连 objects 的 TTFB 0.5 s，走满三跳 1.5 s）。
+// 所以把「这条地址最终落在哪」记在边缘缓存里一小会儿：下一次直接打签名地址。
+// ============================================================================
+
+const RESOLVE_TTL = 180
+const RESOLVE_ORIGIN = 'https://resolve.cf-gh-proxy.invalid/'
+
+/** 边缘缓存（预览与测试里没有，就纯当作不缓存） */
+function resolveCache() {
+  return globalThis.caches?.default || null
+}
+
+function resolveKey(href) {
+  return new Request(RESOLVE_ORIGIN + '?u=' + encodeURIComponent(href))
+}
+
+async function readResolved(href) {
+  const cache = resolveCache()
+  if (!cache) return ''
+  try {
+    const hit = await cache.match(resolveKey(href))
+    if (!hit) return ''
+    const body = await hit.json()
+    return typeof body?.url === 'string' ? body.url : ''
+  } catch {
+    return ''
+  }
+}
+
+async function writeResolved(href, url) {
+  const cache = resolveCache()
+  if (!cache || !url || url === href) return
+  try {
+    await cache.put(
+      resolveKey(href),
+      new Response(JSON.stringify({ url }), {
+        headers: { 'content-type': 'application/json', 'cache-control': 'max-age=' + RESOLVE_TTL },
+      })
+    )
+  } catch {
+    /* 只是加速手段，失败就当没这回事 */
+  }
+}
+
+async function forgetResolved(href) {
+  try {
+    await resolveCache()?.delete(resolveKey(href))
+  } catch {
+    /* 同上 */
+  }
+}
+
 /**
  * 带总时限地取上游响应，自己跟随重定向。
  *
@@ -700,6 +756,32 @@ function withCacheHeaders(headers, ttl, upstream, opts = {}) {
 async function fetchFollowingRedirects(href, init, timeoutMs, maxRedirects, fetchImpl = fetch) {
   let current = href
   let currentInit = { ...init, redirect: 'manual' }
+  // 带请求体（POST/PUT）的请求不能走快路：请求体是流，只能发一次
+  const method = (init.method || 'GET').toUpperCase()
+  const reusable = !init.body && (method === 'GET' || method === 'HEAD')
+
+  if (reusable) {
+    const resolved = await readResolved(href)
+    if (resolved && resolved !== href) {
+      const ac = new AbortController()
+      const timer = setTimeout(() => ac.abort(), timeoutMs)
+      try {
+        const res = await fetchImpl(resolved, { ...init, redirect: 'manual', signal: ac.signal })
+        if (res.status === 200 || res.status === 206) return res
+        // 签名过期、对象被替换：这条记忆不可信了，丢掉重走整条链
+        try {
+          await res.body?.cancel()
+        } catch {
+          /* 忽略 */
+        }
+        await forgetResolved(href)
+      } catch {
+        await forgetResolved(href)
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+  }
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const ac = new AbortController()
@@ -742,6 +824,7 @@ async function fetchFollowingRedirects(href, init, timeoutMs, maxRedirects, fetc
       }
       continue
     }
+    if (reusable && res.ok && current !== href) await writeResolved(href, res.url || current)
     return res
   }
   return null
@@ -1137,7 +1220,7 @@ export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
 // 版本号只在「页面右下角」露一次：它是元信息，不是身份，和顶栏的品牌不是一回事；
 // 放顶栏会在 390px 上跟主题按钮抢位置。改版本时这里和 package.json 要一起改，
 // 测试会核对两者一致（见 test/pages.test.js）。
-export const VERSION = '1.2.11'
+export const VERSION = '1.2.12'
 
 // 右下角那行小字。放在 .stage 之后：.stage 有 flex:1，于是它自然贴在视口底部，
 // 右边缘与顶栏图标对齐，不占中间的操作区。
@@ -1267,7 +1350,6 @@ ${THEME_CYCLE}
   var exs=document.getElementById('exs');
   var copyBtn=document.getElementById('copy');
   var PREFIX=${prefixJson};
-  var busy=false;
 
   function showTip(msg,openUrl){
     tip.textContent=msg;
@@ -1303,57 +1385,26 @@ ${THEME_CYCLE}
     return 'https://github.com/'+v;
   }
 
-  // 新标签页打开。window.open 必须落在用户手势的同一个同步帧里，否则浏览器
-  // 会当弹窗拦掉（fetch 之后再开基本必被拦）。所以先开一个 about:blank 占位，
-  // 等 ?check= 回来再导航过去；校验没过就把这个空白页关掉——用户看不到闪烁。
-  function openBlank(){
-    var tab=null;
-    try{ tab=window.open('about:blank','_blank'); }catch(e){ tab=null; }
-    if(!tab) return null;
-    try{ tab.opener=null; }catch(e){}
-    return tab;
-  }
-
+  // 点「加速」直接在**新标签页**里打开代理地址：一个标签页、一次导航，不再先
+  // fetch 一次 ?check= 再去导航。那条路要多一个完整往返（实测 0.6 s）加一个空白页
+  // 的等待，而校验要判断的东西后端在渲染这份响应时同样有——地址不是文件时，
+  // 错误页会直接出现在这个标签页里，比先问一句再跳更省一次 RTT。
   function submit(){
-    if(busy) return;
     var raw=input.value||'';
     if(!raw.trim()){ showTip('先粘一个 GitHub 链接进来'); input.focus(); return; }
     var href=normalize(raw);
     if(!href){ showTip('只支持 http / https 链接'); input.focus(); return; }
-
-    var checkUrl=location.origin+PREFIX+'?check='+encodeURIComponent(href);
     var target=location.origin+PREFIX+href;
-    busy=true;
-    go.setAttribute('disabled','disabled');
     hideTip();
 
-    // 先占一个新标签页；被拦下就明说，而不是悄悄改回本页打开。
-    var pending=openBlank();
-    if(!pending){
-      busy=false; go.removeAttribute('disabled');
+    var tab=null;
+    try{ tab=window.open(target,'_blank'); }catch(e){ tab=null; }
+    if(!tab){
       showTip('浏览器拦下了新标签页：允许本站弹窗后再点一次，或者', target);
       input.focus();
       return;
     }
-    function goIn(tab){
-      try{ tab.location.replace(target); }
-      catch(e){ tab.location.href=target; }
-    }
-
-    fetch(checkUrl,{headers:{'accept':'application/json'}})
-      .then(function(r){ return r.json(); })
-      .then(function(v){
-        busy=false; go.removeAttribute('disabled');
-        if(v&&v.ok===true){ goIn(pending); return; }
-        try{ pending.close(); }catch(e){}
-        showTip((v&&v.reason)||'这个链接不是可加速的 GitHub 文件');
-        input.focus();
-      })
-      .catch(function(){
-        busy=false; go.removeAttribute('disabled');
-        // 校验接口不可用时不要卡住用户：直接开过去，让后端给出权威判定。
-        goIn(pending);
-      });
+    try{ tab.opener=null; }catch(e){}
   }
 
   go.addEventListener('click',submit);
