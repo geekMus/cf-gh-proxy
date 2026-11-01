@@ -113,7 +113,17 @@ release-assets.githubusercontent.com/github-production-release-asset/…
 
 ## 快速开始
 
-### 1. 装依赖
+### 方式 A：只想跑起来（不克隆仓库）
+
+打开 [`_worker.js`](_worker.js) → 全选复制 → Cloudflare Dashboard → Workers & Pages → Create Worker → 编辑代码，把编辑器里的默认内容删掉、粘贴进去 → Deploy。
+
+配环境变量：Settings → Variables and Secrets，全部可选，见下方 [配置](#配置)。
+
+`_worker.js` 是自动构建的产物：每次 `src/` 有变动，GitHub Actions 会重新构建并**自动提交回 `main`**。所以你打开链接看到的永远是最新代码，不用自己构建。
+
+### 方式 B：改代码
+
+#### 1. 装依赖
 
 ```bash
 npm install
@@ -122,7 +132,7 @@ npm install
 ### 2. 本地跑起来看效果
 
 ```bash
-npx wrangler dev
+npm run dev
 ```
 
 打开 <http://localhost:8787>，会看到说明页；把 GitHub 链接粘进去试试。
@@ -131,8 +141,10 @@ npx wrangler dev
 
 ```bash
 npx wrangler login          # 首次需要
-npx wrangler deploy
+npm run deploy              # 先构建单文件，再部署它
 ```
+
+`npm run deploy` 部署的是 `_worker.js`（构建产物），不是 `src/`。这样**线上跑的和别人复制粘贴的是同一份字节**，不会出现「仓库能跑、单文件不能跑」的偏差。
 
 部署完 `wrangler` 会打印一个 `*.workers.dev` 地址，直接可用。想绑自己的域名，在 `wrangler.toml` 里打开 `[[routes]]` 那一段。
 
@@ -197,33 +209,56 @@ https://gh.example.com/o/r/releases/download/v1.0.0/app.zip
 ## 开发
 
 ```bash
-npm test              # 41 个单元测试，纯桩无网络
-npm run check         # 语法检查
-node scripts/live-check.mjs   # 真机联调（需联网，41 项断言）
-npx wrangler tail     # 看线上实时日志
+npm test                # 41 个单元测试，纯桩无网络
+npm run check           # 语法检查
+npm run build           # 构建单文件 _worker.js
+npm run test:build      # 验证单文件与源码行为一致（16 项断言）
+npm run verify          # 全套：语法 + 单测 + 构建 + 等价性
+node scripts/live-check.mjs   # 真机联调（需联网，31 项断言）
+npx wrangler tail       # 看线上实时日志
 ```
 
 单元测试覆盖：配置解析、上游兼容变量、URL 构建（三种输入形态）、白名单、响应头清洗、缓存头、**重定向跟随（本次改造的核心）**、jsDelivr 改写。
+
+`npm run test:build` 做的事：同一组请求分别打到 `src/index.js` 和 `_worker.js`，逐项比对状态码、响应头、正文 sha256。构建产物和源码行为不一致时它会失败——这是「单文件分发」的安全网。
+
+### 构建产物是自动提交的
+
+`.github/workflows/build-worker.yml` 在 `src/`、`scripts/build.mjs`、`package.json`、`package-lock.json` 变更时触发：
+
+1. 装依赖 → 语法与行尾检查 → 构建 → 产物形态检查 → 与源码行为比对
+2. 产物若与仓库里的不同，就以 `github-actions[bot]` 身份提交回 `main`，提交信息带 `[skip build]`
+
+所以**改完 `src/` 不用记得手动 `npm run build` 再提交**，CI 会补上。想本地先看效果，跑一下 `npm run build` 就行。
+
+`_worker.js` 不在 workflow 的 `paths` 里，回填提交不会再次触发构建，不会形成循环。
 
 ---
 
 ## 目录结构
 
 ```
+_worker.js              ← 构建产物（单文件，可直接粘贴；CI 自动更新）
 src/
-  index.js      # Worker 入口：路由分发
-  config.js     # env → cfg 归一化
-  proxy.js      # 目标 URL 构建 / 白名单 / 响应头清洗 / 缓存头
-  upstream.js   # 上游请求：自己跟随重定向 + 超时
-  pages.js      # 说明页 / nginx 伪装页
+  index.js              # Worker 入口：路由分发
+  config.js             # env → cfg 归一化
+  proxy.js              # 目标 URL 构建 / 白名单 / 响应头清洗 / 缓存头
+  upstream.js           # 上游请求：自己跟随重定向 + 超时
+  pages.js              # 说明页 / nginx 伪装页
 test/
   unit.test.js             # 配置、URL、白名单、响应头
   redirect.test.js         # 重定向跟随（核心）
   jsdelivr.test.js         # jsDelivr 改写
   compat-upstream.test.js  # 上游 URL / URL302 兼容
 scripts/
-  live-check.mjs           # 真机联调（需联网）
+  build.mjs               # 打包成单文件 _worker.js
+  check-build.mjs         # 验证单文件与源码行为一致
+  check-workflow.cjs      # 校验工作流配置（26 项断言）
+  live-check.mjs          # 真机联调（需联网）
+.github/workflows/
+  build-worker.yml        # src 变更时自动构建并回填 _worker.js
 wrangler.toml
+.gitattributes            # 强制 LF（Windows autocrlf 会污染，CI 有断言）
 ```
 
 ---
@@ -244,7 +279,7 @@ wrangler.toml
 - **环境变量**：`URL` / `URL302` 完全兼容；`PREFIX` / `CACHE_TTL` / `UPSTREAM_TIMEOUT` / `ALLOW_AUTH` / `JSDELIVR` 是新增的
 - **不需要改调用方**：链接形态、`?q=` 入口、裸 owner/repo 写法都一样
 - **会变的行为**：非 GitHub 域名现在返回 403（上游是放行）；客户端 Cookie 不再转发
-- **部署方式**：上游支持直接粘贴 `_worker.js` 到 Dashboard；本项目用 `wrangler deploy`（`src/` 分模块，没法粘贴单文件）
+- **部署方式**：两种都行——粘 [`_worker.js`](_worker.js) 到 Dashboard（和上游一样），或 `npm run deploy`（部署的也是构建出来的同一个单文件）
 
 ---
 
