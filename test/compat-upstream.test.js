@@ -47,7 +47,9 @@ test('空字符串等同于不设', () => {
   assert.equal(cfg.disguiseNginx, false)
 })
 
-test('LANDING_LINK 默认为本仓库地址', () => {
-  assert.equal(resolveConfig({}).landingLink, 'https://github.com/geekMus/cf-gh-proxy')
-  assert.equal(resolveConfig({ LANDING_LINK: 'https://example.org/' }).landingLink, 'https://example.org/')
+test('LANDING_LINK 不再是配置项：页面上的仓库入口写死在本仓库', () => {
+  // 这个页面属于本项目，仓库入口没有理由让别人配置。上游有这个变量，
+  // 这里主动去掉；就算 env 里还留着，也不该影响任何行为。
+  assert.equal('landingLink' in resolveConfig({}), false)
+  assert.equal('landingLink' in resolveConfig({ LANDING_LINK: 'https://example.org/' }), false)
 })

@@ -1,6 +1,6 @@
 {
   "name": "cf-gh-proxy",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "type": "module",
   "description": "GitHub 文件加速 Cloudflare Worker：把 release / archive / raw 链接走 Cloudflare 边缘",
@@ -55,9 +55,6 @@
       },
       "BLOCKED_UA": {
         "description": "要伪装成 nginx 页面的爬虫 UA，逗号分隔，默认 `netcraft`。"
-      },
-      "LANDING_LINK": {
-        "description": "首页说明页里「更多」链接指向哪里，默认 `https://github.com/`。"
       },
       "URL302": {
         "description": "可选。设了就让首页 302 跳到这个地址（兼容上游变量）。"

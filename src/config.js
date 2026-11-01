@@ -10,7 +10,6 @@
 // ============================================================================
 
 const DEFAULT_BLOCKED_UA = ['netcraft']
-const DEFAULT_LANDING_LINK = 'https://github.com/geekMus/cf-gh-proxy'
 
 /** 把 '/gh' / 'gh' / '/gh/' 都归一成 '/gh/'；'/' 保持 '/' */
 function normalizePrefix(raw) {
@@ -68,7 +67,8 @@ export function resolveConfig(env) {
     // 是否把客户端 Cookie / Authorization 转发给上游（默认否，见 README 的安全说明）
     allowAuth: bool(e.ALLOW_AUTH, false),
     blockedUAs: [...DEFAULT_BLOCKED_UA, ...parseList(e.BLOCKED_UA), ...parseList(e.UA)],
-    landingLink: str(e.LANDING_LINK) || DEFAULT_LANDING_LINK,
+    // 页面上的仓库入口是写死的（见 pages.js 的 REPO_URL），不是配置项：
+    // 这个页面属于本项目，别人 fork 了要改，改源码里那一行即可。
     // 主页伪装（沿用上游语义）
     disguiseNginx: Boolean(urlIsNginx),
     homeRedirect: url302 || (urlRaw && !urlIsNginx ? urlRaw : ''),

@@ -130,7 +130,8 @@ curl -sI "https://gh.mus.pp.ua/https://github.com/geekMus/container-autoupdate/r
 | `ALLOW_AUTH` | `0` | 是否把访问者的 `Cookie` / `Authorization` 转发给上游。公开服务请保持 `0` |
 | `BLOCKED_UA` | `netcraft` | 命中这些 UA 子串时返回 nginx 伪装页 |
 | `JSDELIVR` | `0` | 是否把「按 tag / 按 SHA」的单文件改写走 jsDelivr（见下文说明） |
-| `LANDING_LINK` | `https://github.com/geekMus/cf-gh-proxy` | 说明页右上角仓库图标指向的链接（默认指向本仓库） |
+
+> 上游的 `LANDING_LINK` 这里**没有**：说明页右上角那个仓库入口写死指向本仓库（`src/pages.js` 的 `REPO_URL`）。页面属于本项目，做成变量只会多一个「指向别处」的口子；fork 的人要改，改源码那一行。
 
 ### 兼容上游的两个伪装变量
 

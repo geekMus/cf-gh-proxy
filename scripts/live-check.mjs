@@ -24,7 +24,6 @@ const ENV = {
   MAX_REDIRECTS: '5',
   ALLOW_AUTH: '0',
   BLOCKED_UA: 'netcraft',
-  LANDING_LINK: 'https://github.com/',
 }
 
 const ORIGIN = 'https://gh.test'

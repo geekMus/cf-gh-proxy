@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.1 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.2 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -29,7 +29,6 @@
 // ============================================================================
 
 const DEFAULT_BLOCKED_UA = ['netcraft']
-const DEFAULT_LANDING_LINK = 'https://github.com/geekMus/cf-gh-proxy'
 
 /** 把 '/gh' / 'gh' / '/gh/' 都归一成 '/gh/'；'/' 保持 '/' */
 function normalizePrefix(raw) {
@@ -87,7 +86,8 @@ function resolveConfig(env) {
     // 是否把客户端 Cookie / Authorization 转发给上游（默认否，见 README 的安全说明）
     allowAuth: bool(e.ALLOW_AUTH, false),
     blockedUAs: [...DEFAULT_BLOCKED_UA, ...parseList(e.BLOCKED_UA), ...parseList(e.UA)],
-    landingLink: str(e.LANDING_LINK) || DEFAULT_LANDING_LINK,
+    // 页面上的仓库入口是写死的（见 pages.js 的 REPO_URL），不是配置项：
+    // 这个页面属于本项目，别人 fork 了要改，改源码里那一行即可。
     // 主页伪装（沿用上游语义）
     disguiseNginx: Boolean(urlIsNginx),
     homeRedirect: url302 || (urlRaw && !urlIsNginx ? urlRaw : ''),
@@ -1054,15 +1054,18 @@ function faviconHref() {
 export const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#2f6f9f"/><path d="M5 8.5h10v9h3" fill="none" stroke="#fff" stroke-width="4"/><path d="M18 11.6 27.6 17.5 18 23.4Z" fill="#fff"/></svg>`
 
 // 顶栏：标记 + 名字 + 仓库图标 + 主题按钮。两页共用。
-// 仓库地址是页面上唯一的外链，也只出现在这一个入口上（底部不再重复）。
+// 仓库地址写死在这里，不做成环境变量：这个页面属于本项目，别人的 fork 要改，
+// 改这一行就行；留一个 LANDING_LINK 只会让线上多一个「指向别处」的入口。
+export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
+
 const GITHUB_MARK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>'
 
-function renderTop(landingLink) {
+function renderTop() {
   return `<header class="top">
   <span class="mark" aria-hidden="true">${logoMark()}</span>
   <span class="brand">GitHub 文件加速</span>
   <span class="top-sp"></span>
-  <a class="gh" href="${escapeHtml(landingLink)}" target="_blank" rel="noopener noreferrer" aria-label="打开项目仓库" title="项目仓库">${GITHUB_MARK}</a>
+  <a class="gh" href="${REPO_URL}" target="_blank" rel="noopener noreferrer" aria-label="打开项目仓库" title="项目仓库">${GITHUB_MARK}</a>
   <button id="theme" type="button" aria-label="切换主题（跟随系统 / 亮色 / 暗色）" title="切换主题">${THEME_ICONS}</button>
 </header>`
 }
@@ -1102,7 +1105,7 @@ function renderCore(prefix) {
       <p class="lede anim d1">把 release 资产、源码包或单个文件的地址丢进来，走这条链接直接下。</p>
       <div class="bar anim d2" data-ui>
         <div class="ui-field" id="field">
-          <input type="text" id="q" placeholder="https://github.com/owner/repo/releases/download/v1.0.0/app.zip" autocomplete="off" spellcheck="false" autocapitalize="off" enterkeyhint="go" aria-describedby="tip" aria-label="GitHub 链接">
+          <input type="text" id="q" placeholder="https://github.com/geekMus/cf-gh-proxy/blob/main/_worker.min.js" autocomplete="off" spellcheck="false" autocapitalize="off" enterkeyhint="go" aria-describedby="tip" aria-label="GitHub 链接">
           <button id="clear" type="button" aria-label="清空输入" tabindex="-1">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
           </button>
@@ -1115,9 +1118,9 @@ function renderCore(prefix) {
       <p class="ui-tip" id="tip" role="status" aria-live="polite"></p>
       <div class="ex anim d3" id="exs">
         <span class="lbl">试试</span>
-        <button type="button" data-ex="https://github.com/owner/repo/releases/download/v1.0.0/app.zip">release 资产</button>
-        <button type="button" data-ex="https://github.com/owner/repo/archive/refs/tags/v1.0.0.zip">源码包</button>
-        <button type="button" data-ex="https://github.com/owner/repo/raw/main/README.md">单个文件</button>
+        <button type="button" data-ex="https://github.com/geekMus/cf-gh-proxy/blob/main/_worker.min.js">本项目脚本</button>
+        <button type="button" data-ex="https://github.com/geekMus/cf-gh-proxy/archive/refs/heads/main.zip">源码包</button>
+        <button type="button" data-ex="https://github.com/geekMus/cf-gh-proxy/raw/main/_worker.min.js">raw 直链</button>
         <button id="copy" type="button" aria-label="复制示例">
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8"/><path d="M10.5 5.5v-2A1 1 0 0 0 9.5 2.5h-6A1 1 0 0 0 2.5 3.5v6A1 1 0 0 0 3.5 10.5h2" stroke-linecap="round"/></svg>
           复制示例
@@ -1152,7 +1155,7 @@ function renderLanding(cfg) {
 </head>
 <body>
 <div class="shell">
-  ${renderTop(cfg.landingLink)}
+  ${renderTop()}
   <main class="stage">
     ${renderCore(prefix)}
   </main>
@@ -1255,7 +1258,7 @@ ${THEME_CYCLE}
   }
   copyBtn.addEventListener('click',function(){
     var v=(input.value||'').trim();
-    copyText(v||'https://github.com/owner/repo/releases/download/v1.0.0/app.zip');
+    copyText(v||'https://github.com/geekMus/cf-gh-proxy/blob/main/_worker.min.js');
     if(!v){ input.focus(); }
   });
 
@@ -1295,7 +1298,7 @@ function renderErrorPage(cfg, reason) {
 </head>
 <body>
 <div class="shell">
-  ${renderTop(cfg.landingLink)}
+  ${renderTop()}
 
   <div class="err-hero">
     <h1>这个地址不是一个文件</h1>

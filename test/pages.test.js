@@ -21,7 +21,7 @@ import assert from 'node:assert/strict'
 import vm from 'node:vm'
 
 import worker from '../src/index.js'
-import { renderLanding, renderErrorPage, renderDisguise } from '../src/pages.js'
+import { renderLanding, renderErrorPage, renderDisguise, REPO_URL } from '../src/pages.js'
 import { resolveConfig } from '../src/config.js'
 
 const CFG = resolveConfig({})
@@ -80,8 +80,8 @@ test('首页：内联脚本都能编译（语法错会让整段脚本被静默�
 test('首页：没有引用任何外部资源（零外部依赖是硬约束）', () => {
   const html = renderLanding(CFG)
   const refs = externalRefs(html)
-  // 唯一允许的是页脚那个指向 landingLink 的外链（它是 <a href>，不是资源）
-  const allowed = [CFG.landingLink]
+  // 唯一允许的是右上角那个指向本仓库的外链（它是 <a href>，不是资源）
+  const allowed = [REPO_URL]
   const unexpected = refs.filter((r) => !allowed.includes(r))
   assert.deepEqual(unexpected, [], `不该引用外部资源，发现：${unexpected.join(', ')}`)
 })
