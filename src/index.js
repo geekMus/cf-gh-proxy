@@ -280,10 +280,8 @@ async function handleProxy(request, target, cfg, ctx) {
   const range = request.headers.get('Range')
   if (range) {
     upstreamHeaders.set('Range', range)
-    // Range + 压缩 的组合是错的：Cloudflare 的 fetch 默认跟上游协商 br/gzip，
-    // 上游于是按「压缩后的表示」切字节，回来的 content-range 总数是压缩长度
-    // （实测 37913 字节的文件报成 13173），而我们拿到的是压缩流碎片，
-    // 客户端续传拼出来的文件就是坏的。带 Range 时显式要原始字节。
+    // Range + 压缩不能同时要：上游会按「压缩后的表示」切字节，回来的是压缩流碎片。
+    // 这里显式要 identity（Cloudflare 的边缘 fetch 未必听，所以下面还有兜底）。
     upstreamHeaders.set('Accept-Encoding', 'identity')
   }
 
@@ -303,6 +301,29 @@ async function handleProxy(request, target, cfg, ctx) {
 
   if (!res) {
     return textResponse('上游重定向次数过多', 508)
+  }
+
+  // Range 落在「压缩后的表示」上时，206 是不可用的：上游按 br/gzip 的字节切，
+  // 回来的 content-range 总数是压缩长度，正文是压缩流碎片——客户端续传拼出来
+  // 的文件是坏的（实测 37912 字节的文本报成 13167 字节的「总数」）。
+  //
+  // Cloudflare 的边缘 fetch 由平台决定压缩协商，Worker 里设 accept-encoding
+  // 改不了它（v1.2.3 试过，线上仍协商 br）。所以只能在这层兜底：发现上游这次
+  // 是压缩表示，就别给 206 了，丢掉 Range 重取全量回 200，让客户端从头下——
+  // 慢一点，但拿到的一定是原始字节。二进制资产（zip/exe）不会被压缩，这条不触发。
+  if (range && res.headers.has('content-encoding')) {
+    res.body?.cancel()
+    const fullHeaders = new Headers(upstreamHeaders)
+    fullHeaders.delete('Range')
+    const retry = { ...init, headers: fullHeaders }
+    try {
+      res = await fetchFollowingRedirects(target.href, retry, cfg.upstreamTimeout, cfg.maxRedirects)
+    } catch (err) {
+      return textResponse(`上游请求失败：${err && err.message ? err.message : err}`, 502)
+    }
+    if (!res) {
+      return textResponse('上游重定向次数过多', 508)
+    }
   }
 
   // ---- 响应头清洗 ---------------------------------------------------------

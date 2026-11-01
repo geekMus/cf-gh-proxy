@@ -213,3 +213,33 @@ test('带 Range 的请求向上游要 identity，不带 Range 时不动 accept-e
     globalThis.fetch = realFetch
   }
 })
+
+test('Range 打到压缩表示上：不给 206，丢掉 Range 重取全量', async () => {
+  const calls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (input, init) => {
+    const h = new Headers(init && init.headers)
+    calls.push(h)
+    if (h.has('range')) {
+      // 上游按 br 表示切片：content-range 是压缩后的长度，正文是压缩流
+      return new Response('compressed', {
+        status: 206,
+        headers: { 'content-type': 'text/plain', 'content-encoding': 'br', 'content-range': 'bytes 0-9/13' },
+      })
+    }
+    return new Response('full-body', { status: 200, headers: { 'content-type': 'text/plain' } })
+  }
+  try {
+    const res = await worker.fetch(
+      new Request('https://gh.test/https://raw.githubusercontent.com/o/r/main/x.js', { headers: { Range: 'bytes=0-9' } }),
+      {},
+      { waitUntil() {} }
+    )
+    assert.equal(res.status, 200, '压缩表示上的 206 不可用，必须回 200')
+    assert.equal(await res.text(), 'full-body')
+    assert.equal(res.headers.has('content-range'), false)
+    assert.equal(calls.length, 2, '先带 Range 试一次，再丢掉 Range 重取')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
