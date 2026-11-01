@@ -204,18 +204,49 @@ if (want.min) {
 if (want.source) {
   const code = buildSource()
   const rec = writeArtifact('_worker.js', code, bannerFor('source'), '源码版', '可读 · 供审计与改动')
-  // 源码版的核心承诺是「注释一行不丢」，落盘后立刻核对：
-  // 与六个源文件的注释行总数比对，少了就说明拼接过程吞掉了注释。
-  let expected = 0
-  for (const m of MODULES) {
-    expected += (readFileSync(resolve(ROOT, 'src', m.file), 'utf8').match(/^\s*\/\//gm) || []).length
-  }
-  const got = (rec.full.match(/^\s*\/\//gm) || []).length
-  if (got < expected) {
-    console.error(`ERR 源码版注释丢失：源文件共 ${expected} 行 //，产物只有 ${got} 行`)
+  // 源码版的核心承诺是「注释一行不丢」，落盘后立刻**逐行**核对。
+  //
+  // 为什么不能用「产物 >= 源文件」：每个模块的 3 行分隔头本身就以 `//` 开头，
+  // 六个模块一共有 18 行，用 `>=` 比较时它们会把最多 18 行丢失抵消掉 —— 检查
+  // 看着通过，注释其实少了。所以判据是**精确相等**：
+  //   `//` 行数 = 各模块（去过模块语法后）的 `//` 行数 + 18 行分隔头
+  //   `/*` 个数 = 各模块的 `/*` 个数 + 1（顶部归属声明）
+  // 再逐行确认源文件里的每一条注释行都能在产物里原样找到。
+  const stripped = MODULES.map((m) =>
+    stripModuleSyntax(readFileSync(resolve(ROOT, 'src', m.file), 'utf8'), m.file === 'config.js')
+  )
+  const count = (text, re) => (text.match(re) || []).length
+  const expectedSlash = stripped.reduce((n, t) => n + count(t, /^\s*\/\//gm), 0) + MODULES.length * 3
+  const gotSlash = count(rec.full, /^\s*\/\//gm)
+  const expectedBlock = stripped.reduce((n, t) => n + count(t, /\/\*/g), 0) + 1
+  const gotBlock = count(rec.full, /\/\*/g)
+
+  if (gotSlash !== expectedSlash || gotBlock !== expectedBlock) {
+    console.error('ERR 源码版注释丢失：')
+    console.error(`  行注释（//）：期望 ${expectedSlash} 行，产物 ${gotSlash} 行`)
+    console.error(`  块注释（/*）：期望 ${expectedBlock} 个，产物 ${gotBlock} 个`)
     process.exit(1)
   }
-  console.log(`OK 源码版注释完整：源文件 ${expected} 行 // → 产物 ${got} 行（含模块分隔头）`)
+
+  // 计数相等还不够：万一分隔头恰好补上了丢失的行，数目也会对得上。
+  // 再逐行比对一遍，确保每一条源注释都在产物里原样存在。
+  const outLines = new Set(rec.full.split('\n'))
+  const missing = []
+  for (const text of stripped) {
+    for (const line of text.split('\n')) {
+      if (/^\s*\/\//.test(line) && !outLines.has(line)) missing.push(line.trim())
+    }
+  }
+  if (missing.length) {
+    console.error(`ERR 源码版有 ${missing.length} 行注释没有原样出现在产物里：`)
+    for (const line of missing.slice(0, 5)) console.error(`  - ${line.slice(0, 72)}`)
+    process.exit(1)
+  }
+
+  console.log(
+    `OK 源码版注释完整：${expectedSlash - MODULES.length * 3} 行 // + ${MODULES.length * 3} 行分隔头 = ${gotSlash} 行，` +
+      `块注释 ${gotBlock} 个（含横幅），逐行核对无缺失`
+  )
   built.push(rec)
 }
 
