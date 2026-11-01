@@ -1,0 +1,48 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "cf-gh-proxy"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# 本地开发：`wrangler dev` 会在 .dev.vars 里读同名变量（见 .dev.vars.example）
+# 线上：`wrangler deploy` 之后在 Dashboard → Settings → Variables 里改，或在这里的 [vars] 里写死
+[vars]
+# 路由前缀。/ 表示直接挂在根上（https://你的域名/https://github.com/...）；
+# 想改成 https://你的域名/gh/https://github.com/... 就填 "/gh"
+PREFIX = "/"
+
+# 分支文件是否重定向到 jsDelivr（1 = 开，0 = 关）
+JSDELIVR = "0"
+
+# 边缘缓存秒数：可变资源（分支上的 raw、按分支名的打包）
+CACHE_TTL = "300"
+# 不可变资源（release 资产、按 commit SHA 的 raw）
+IMMUTABLE_CACHE_TTL = "86400"
+
+# 上游响应头到达前的等待上限（毫秒）。拿到响应头后不再计时，下载大文件不受影响。
+UPSTREAM_TIMEOUT = "30000"
+# 最多跟随几跳重定向
+MAX_REDIRECTS = "5"
+
+# 是否把访问者的 Cookie / Authorization 转发给上游。
+# 公开服务请保持 0：否则等于把访问者凭据送给 GitHub。
+ALLOW_AUTH = "0"
+
+# 命中这些 UA 子串时返回 nginx 伪装页（逗号/空格分隔）
+BLOCKED_UA = "netcraft"
+
+# 首页底部展示的落地链接
+LANDING_LINK = "https://github.com/"
+
+# —— 主页伪装（与上游 cmliu/CF-Workers-GitHub 的语义完全一致）——
+# URL302 = "https://t.me/xxx"   # 主页 302 跳转到这里（优先级最高）
+# URL    = "nginx"             # 主页伪装成 nginx 默认页；也可填任意地址（302 过去）
+# 都不设时，主页返回本项目的说明页。
+
+# 可选：自定义域名 / 路由
+# [[routes]]
+# pattern = "gh.example.com"
+# custom_domain = true
+
+# 可选：需要更长的 CPU 时间时开启
+# [limits]
+# cpu_ms = 50

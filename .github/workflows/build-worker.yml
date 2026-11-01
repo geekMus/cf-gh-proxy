@@ -1,0 +1,116 @@
+name: Build single-file worker
+
+# 把 src/ 下分模块的源码构建成单文件 _worker.js，并自动提交回 main。
+#
+# 为什么需要这个：
+#   _worker.js 是给别人「打开链接、全选复制、粘进 Cloudflare」用的分发产物。
+#   如果它只能靠人工 `npm run build` 更新，迟早会与 src/ 不同步——
+#   别人复制到的就是过期代码，而且这种偏差很难被发现。
+#
+# 触发范围刻意收窄到「会影响产物的文件」：
+#   src/**（源码）、scripts/build.mjs（构建逻辑）、package.json（版本号与依赖）、
+#   package-lock.json（依赖锁定）、本文件自身。
+#   只改 README / 测试 / LICENSE 不会触发，避免无意义的提交。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/build.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-worker.yml'
+  workflow_dispatch:
+
+# 需要写权限才能把构建产物提交回 main
+permissions:
+  contents: write
+
+# 同一时间只跑一个构建，避免两次 push 并发时互相覆盖提交
+concurrency:
+  group: build-worker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    # 回填产生的提交带 [skip build] 标记，这里再兜一层，防止自触发循环。
+    # 实际上回填只改 _worker.js，不在上面的 paths 里，本来就不会触发；
+    # 但万一以后 paths 被放宽，这层能防止无限循环。
+    if: "!contains(github.event.head_commit.message, '[skip build]')"
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6
+        with:
+          # 需要完整历史才能正确提交；fetch-depth: 0 也便于后续排查
+          fetch-depth: 0
+          # 用 GITHUB_TOKEN 推送，下面显式配置 bot 身份
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 安装 Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 安装依赖
+        # 用 ci 而不是 install：严格按 package-lock.json 装，保证构建结果可复现
+        run: npm ci
+
+      - name: 校验源码
+        run: |
+          set -eu
+          echo "=== 语法检查 ==="
+          npm run check
+          echo "=== 行尾检查（必须全是 LF） ==="
+          bad=0
+          for f in $(git ls-files 'src/*.js' 'scripts/*.mjs'); do
+            if [ "$(tr -dc '\r' < "$f" | wc -c)" -ne 0 ]; then
+              echo "::error file=$f::这个文件含 CRLF，必须是 LF"
+              bad=1
+            fi
+          done
+          [ "$bad" -eq 0 ] || exit 1
+
+      - name: 构建单文件
+        run: npm run build
+
+      - name: 检查产物
+        run: |
+          set -eu
+          test -f _worker.js || { echo "::error::没有生成 _worker.js"; exit 1; }
+          echo "=== 产物形态 ==="
+          if grep -qE '^[[:space:]]*import[[:space:]]' _worker.js; then
+            echo "::error::_worker.js 里残留 import 语句，无法在 Dashboard 直接粘贴"; exit 1
+          fi
+          if grep -q 'sourceMappingURL' _worker.js; then
+            echo "::error::_worker.js 里残留 sourcemap 引用"; exit 1
+          fi
+          if ! grep -q 'export' _worker.js; then
+            echo "::error::_worker.js 缺少 export"; exit 1
+          fi
+          if ! grep -q 'CMLiussss' _worker.js; then
+            echo "::error::_worker.js 缺少上游版权声明（MIT 要求保留）"; exit 1
+          fi
+          echo "大小：$(wc -c < _worker.js) 字节 / $(wc -l < _worker.js) 行"
+
+      - name: 与源码行为比对
+        run: npm run test:build
+
+      - name: 回填到 main
+        run: |
+          set -eu
+          # 产物没变就什么都不做，避免产生空提交
+          if git diff --quiet -- _worker.js; then
+            echo "构建产物与仓库中一致，无需回填。"
+            exit 0
+          fi
+
+          VERSION=$(node -p "require('./package.json').version")
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add _worker.js
+          git commit -m "chore: 自动构建 _worker.js（v$VERSION）[skip build]"
+          git push origin HEAD:main
+          echo "已回填 _worker.js（v$VERSION）"

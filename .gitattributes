@@ -1,0 +1,29 @@
+# 强制所有文本文件在仓库里存 LF。
+#
+# 为什么必须写死：Windows 上 git 默认 core.autocrlf=true，会把检出到工作区的
+# 文件转成 CRLF。而 .github/workflows/build-worker.yml 里有断言「src/ 下的文件
+# 不许含 CR」，一旦仓库里混进 CRLF，CI 就会失败。显式声明 eol=lf 后，无论谁在
+# 什么平台上检出，工作区拿到的都是 LF。
+#
+# 二进制文件不要加 text 属性（否则 git 会尝试转换它们）。
+
+* text=auto eol=lf
+
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+*.sh    text eol=lf
+
+# 明确标记为二进制，避免任何转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.zip   binary
+*.gz    binary
