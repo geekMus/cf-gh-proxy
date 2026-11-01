@@ -4,6 +4,16 @@
   "private": true,
   "type": "module",
   "description": "GitHub 文件加速 Cloudflare Worker：把 release / archive / raw 链接走 Cloudflare 边缘",
+  "homepage": "https://github.com/geekMus/cf-gh-proxy#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geekMus/cf-gh-proxy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/geekMus/cf-gh-proxy/issues"
+  },
+  "author": "cf-gh-proxy contributors",
+  "license": "MIT",
   "main": "src/index.js",
   "scripts": {
     "build": "node scripts/build.mjs",

@@ -115,11 +115,27 @@ release-assets.githubusercontent.com/github-production-release-asset/…
 
 ### 方式 A：只想跑起来（不克隆仓库）
 
-打开 [`_worker.js`](_worker.js) → 全选复制 → Cloudflare Dashboard → Workers & Pages → Create Worker → 编辑代码，把编辑器里的默认内容删掉、粘贴进去 → Deploy。
+单文件地址：
+
+```
+https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.js
+```
+
+也可以直接看 GitHub 上的 [`_worker.js`](_worker.js)。
+
+步骤：
+
+1. 打开上面的地址，`Ctrl+A` 全选、`Ctrl+C` 复制
+2. 打开 [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Create** → **Worker**
+3. 给个名字（比如 `gh-proxy`），点 **Deploy**
+4. 点 **Edit code**，把编辑器里默认的 `Hello World` 内容全删掉，粘贴刚复制的内容
+5. 右上角 **Deploy**
 
 配环境变量：Settings → Variables and Secrets，全部可选，见下方 [配置](#配置)。
 
 `_worker.js` 是自动构建的产物：每次 `src/` 有变动，GitHub Actions 会重新构建并**自动提交回 `main`**。所以你打开链接看到的永远是最新代码，不用自己构建。
+
+> 如果你的网络访问 `raw.githubusercontent.com` 不稳定，可以用 GitHub 页面下载：仓库主页 → `_worker.js` → 右上角 **Raw** 按钮，效果一样。
 
 ### 方式 B：改代码
 
@@ -147,6 +163,42 @@ npm run deploy              # 先构建单文件，再部署它
 `npm run deploy` 部署的是 `_worker.js`（构建产物），不是 `src/`。这样**线上跑的和别人复制粘贴的是同一份字节**，不会出现「仓库能跑、单文件不能跑」的偏差。
 
 部署完 `wrangler` 会打印一个 `*.workers.dev` 地址，直接可用。想绑自己的域名，在 `wrangler.toml` 里打开 `[[routes]]` 那一段。
+
+---
+
+## 部署后：拿到地址、绑自己的域名
+
+**拿到默认地址。** 用方式 A 在 Dashboard 建的 Worker，地址是 `https://<worker名>.<你的子域>.workers.dev`。`<你的子域>` 在 Dashboard → Workers & Pages 页面顶部能看到，形如 `xxx.workers.dev`。这个地址不用任何配置就能用，也能直接配到下载工具里。
+
+**绑自己的域名（可选，但强烈建议）。** `workers.dev` 在国内经常被墙，绑自己的域名才稳定：
+
+1. 先把域名接入 Cloudflare（DNS 托管在 CF）
+2. Dashboard → Workers & Pages → 选中你的 Worker → **Settings** → **Domains & Routes** → **Add** → **Custom domain**
+3. 填你的域名，比如 `gh.mus.pp.ua`，点 **Add domain**
+4. Cloudflare 会自动给你建一条 CNAME 记录，等 1～2 分钟生效
+
+绑好后就能用：
+
+```
+https://gh.mus.pp.ua/https://github.com/geekMus/container-autoupdate/releases/download/v0.3.2/container-autoupdate.sh
+```
+
+**用 wrangler 部署的话**，在 `wrangler.toml` 里取消注释这一段，再 `npm run deploy`：
+
+```toml
+[[routes]]
+pattern = "gh.example.com"
+custom_domain = true
+```
+
+**验证部署成功。** 浏览器打开 `https://你的域名/`，应该看到说明页（一个输入框 + 用法示例）。然后试一条真实链接：
+
+```bash
+curl -sI "https://gh.mus.pp.ua/https://github.com/geekMus/container-autoupdate/releases/latest/download/container-autoupdate.sh"
+# 期望：HTTP/2 200、content-type: application/octet-stream、没有 location、没有 set-cookie
+```
+
+三个关键点都对上就说明部署正确：**200**（不是 302）、**octet-stream**（不是 text/html）、**没有 set-cookie**。这三条正是本项目相对上游改造的地方——上游会把 302 回写给客户端，多走一跳 GitHub 网页前端。
 
 ---
 

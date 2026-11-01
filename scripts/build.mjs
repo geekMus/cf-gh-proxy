@@ -40,13 +40,15 @@ const banner = `/**
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
+ * 本文件原始地址：https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.js
  *
  * 基于 cmliu/CF-Workers-GitHub 演化而来（MIT, Copyright (c) 2025 CMLiussss）
  * Copyright (c) 2026 cf-gh-proxy contributors
  *
- * 用法：整段粘贴到 Cloudflare Dashboard → Workers → 编辑代码，或
- *       wrangler deploy 时指向本文件（wrangler.toml 里 main = "_worker.js"）。
- * 配置：在 Dashboard 的 Settings → Variables 里加环境变量，见 README。
+ * 用法一（推荐，不装任何工具）：整段复制本文件内容，粘贴到
+ *   Cloudflare Dashboard → Workers & Pages → Create Worker → 编辑代码。
+ * 用法二（用 wrangler）：npm run deploy（构建后以 --main _worker.js 部署）。
+ * 配置：在 Dashboard 的 Settings → Variables and Secrets 里加环境变量，见 README。
  */`
 
 if (!existsSync(ENTRY)) {

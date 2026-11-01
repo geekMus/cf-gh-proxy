@@ -74,6 +74,5 @@ ck('package.json 有 test:build 脚本', typeof (pkg.scripts || {})['test:build'
 ck('esbuild 在 devDependencies', 'esbuild' in pkgDev)
 
 out.push(`\n问题数 = ${bad}`)
-fs.writeFileSync(path.join(__dirname, '..', '_wf_report.txt'), out.join('\n'), 'utf8')
 console.log(out.join('\n'))
 process.exit(bad === 0 ? 0 : 1)
