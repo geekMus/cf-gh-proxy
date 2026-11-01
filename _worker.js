@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.0.2 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.0.3 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -609,6 +609,13 @@ function maybeJsdelivrUrl(target, cfg) {
   if (!/^v?\d/.test(ref) && !/^[0-9a-f]{7,40}$/i.test(ref)) return null;
   return new URL(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${rest}`);
 }
+function maybeRewriteBlob(target) {
+  if (target.hostname !== "github.com") return null;
+  const m = target.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/(.+)$/);
+  if (!m) return null;
+  const [, owner, repo, rest] = m;
+  return new URL(`https://raw.githubusercontent.com/${owner}/${repo}/${rest}`);
+}
 var DROP_RESPONSE_HEADERS = /* @__PURE__ */ new Set([
   // 由 Worker 统一设置
   "access-control-allow-origin",
@@ -768,8 +775,9 @@ var index_default = {
     if (!verdict.ok) {
       return badRequest(request, cfg, verdict.reason || "\u8FD9\u4E2A\u94FE\u63A5\u4E0D\u662F\u53EF\u52A0\u901F\u7684 GitHub \u6587\u4EF6");
     }
-    const viaCdn = maybeJsdelivrUrl(target, cfg);
-    return handleProxy(request, viaCdn || target, cfg, ctx);
+    const rawTarget = maybeRewriteBlob(target) || target;
+    const viaCdn = maybeJsdelivrUrl(rawTarget, cfg);
+    return handleProxy(request, viaCdn || rawTarget, cfg, ctx);
   }
 };
 function renderHome(cfg) {

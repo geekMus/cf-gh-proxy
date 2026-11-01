@@ -18,7 +18,7 @@
 
 import { resolveConfig } from './config.js'
 import { renderLanding, renderDisguise, renderErrorPage } from './pages.js'
-import { buildTargetUrl, checkTarget, maybeJsdelivrUrl, sanitizeUpstreamHeaders, withCacheHeaders } from './proxy.js'
+import { buildTargetUrl, checkTarget, maybeJsdelivrUrl, maybeRewriteBlob, sanitizeUpstreamHeaders, withCacheHeaders } from './proxy.js'
 import { fetchFollowingRedirects } from './upstream.js'
 
 const CORS_HEADERS = {
@@ -99,10 +99,13 @@ export default {
       return badRequest(request, cfg, verdict.reason || '这个链接不是可加速的 GitHub 文件')
     }
 
-    // 可选：分支单文件改写走 jsDelivr（默认关闭，见 maybeJsdelivrUrl 注释）
-    const viaCdn = maybeJsdelivrUrl(target, cfg)
+    // /blob/ 是网页，换成 raw 才能拿到文件字节（见 maybeRewriteBlob 注释）
+    const rawTarget = maybeRewriteBlob(target) || target
 
-    return handleProxy(request, viaCdn || target, cfg, ctx)
+    // 可选：分支单文件改写走 jsDelivr（默认关闭，见 maybeJsdelivrUrl 注释）
+    const viaCdn = maybeJsdelivrUrl(rawTarget, cfg)
+
+    return handleProxy(request, viaCdn || rawTarget, cfg, ctx)
   },
 }
 

@@ -252,6 +252,8 @@ curl -sI "https://gh.mus.pp.ua/https://github.com/geekMus/container-autoupdate/r
 | Gist | `gist.githubusercontent.com/user/id/raw/x.txt` |
 | API | `api.github.com/...` |
 
+其中 `/blob/` 是 GitHub 的**网页**（返回渲染好的 HTML，不是文件字节），Worker 会自动改写成 `raw.githubusercontent.com` 再取，所以 `blob` 链接也能拿到原始文本。
+
 省略 `https://github.com/` 也能用：
 
 ```

@@ -152,6 +152,25 @@ export function maybeJsdelivrUrl(target, cfg) {
   return new URL(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${rest}`)
 }
 
+/**
+ * `github.com/o/r/blob/<ref>/<path>` 是**网页**（GitHub 会返回渲染好的 HTML，
+ * 带导航栏、按钮、语法高亮），拿不到文件字节。要拿到原文必须换成
+ * `raw.githubusercontent.com/o/r/<ref>/<path>`。
+ *
+ * 上游那版是靠 `path.replace('/blob/','/raw/')` 做这件事，我重写时漏掉了，
+ * 结果 /blob/ 路径把整页 HTML 当成「文件」回给了客户端——实测 3 次都返回
+ * `text/html` 且正文是 `<!DOCTYPE html>`。这里补回来。
+ *
+ * 注意只改 blob，不动 raw（raw 本来就是对的）。
+ */
+export function maybeRewriteBlob(target) {
+  if (target.hostname !== 'github.com') return null
+  const m = target.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/(.+)$/)
+  if (!m) return null
+  const [, owner, repo, rest] = m
+  return new URL(`https://raw.githubusercontent.com/${owner}/${repo}/${rest}`)
+}
+
 /** 上游响应里这些头必须删掉：要么由 Worker 重新决定，要么会干扰下游。 */
 const DROP_RESPONSE_HEADERS = new Set([
   // 由 Worker 统一设置
