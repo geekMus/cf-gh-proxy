@@ -488,6 +488,17 @@ ${THEME_CYCLE}
     return 'https://github.com/'+v;
   }
 
+  // 新标签页打开。window.open 必须落在用户手势的同一个同步帧里，否则浏览器
+  // 会当弹窗拦掉（fetch 之后再开基本必被拦）。所以先开一个 about:blank 占位，
+  // 等 ?check= 回来再导航过去；校验没过就把这个空白页关掉——用户看不到闪烁。
+  function openBlank(){
+    var tab=null;
+    try{ tab=window.open('about:blank','_blank'); }catch(e){ tab=null; }
+    if(!tab) return null;
+    try{ tab.opener=null; }catch(e){}
+    return tab;
+  }
+
   function submit(){
     if(busy) return;
     var raw=input.value||'';
@@ -496,22 +507,37 @@ ${THEME_CYCLE}
     if(!href){ showTip('只支持 http / https 链接'); input.focus(); return; }
 
     var checkUrl=location.origin+PREFIX+'?check='+encodeURIComponent(href);
+    var target=location.origin+PREFIX+href;
     busy=true;
     go.setAttribute('disabled','disabled');
     hideTip();
+
+    // 先占一个新标签页；被拦下就明说，而不是悄悄改回本页打开。
+    var pending=openBlank();
+    if(!pending){
+      busy=false; go.removeAttribute('disabled');
+      showTip('浏览器拦下了新标签页：允许本站弹窗，或按住 Ctrl 再点「加速」');
+      input.focus();
+      return;
+    }
+    function goIn(tab){
+      try{ tab.location.replace(target); }
+      catch(e){ tab.location.href=target; }
+    }
 
     fetch(checkUrl,{headers:{'accept':'application/json'}})
       .then(function(r){ return r.json(); })
       .then(function(v){
         busy=false; go.removeAttribute('disabled');
-        if(v&&v.ok===true){ location.href=location.origin+PREFIX+href; return; }
+        if(v&&v.ok===true){ goIn(pending); return; }
+        try{ pending.close(); }catch(e){}
         showTip((v&&v.reason)||'这个链接不是可加速的 GitHub 文件');
         input.focus();
       })
       .catch(function(){
         busy=false; go.removeAttribute('disabled');
-        // 校验接口不可用时不要卡住用户：直接跳过去，让后端给出权威判定。
-        location.href=location.origin+PREFIX+href;
+        // 校验接口不可用时不要卡住用户：直接开过去，让后端给出权威判定。
+        goIn(pending);
       });
   }
 
