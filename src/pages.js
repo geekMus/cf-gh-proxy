@@ -284,6 +284,10 @@ a:focus-visible,button:focus-visible,input:focus-visible{
 .sec-h p{margin:6px 0 0;color:var(--muted);font-size:14.5px}
 `
 
+// 页面输出用的 CSS：去掉注释与行首缩进。注释是写给读源码的人看的（源码版里有），
+// 浏览器不需要；压缩后首页少 1 KB 左右，gzip 后差别很小，但白拿。
+const CSS_MIN = BASE_CSS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]+/gm, '').replace(/\n{2,}/g, '\n')
+
 // <head> 里的同步脚本：读本地存的主题，在首帧之前把 data-theme 落定，避免闪白。
 // 同时给 <html> 挂上 js 类，供需要脚本的样式使用。
 const THEME_INIT = `
@@ -429,9 +433,10 @@ function renderCore(prefix) {
  *
  * @param {ReturnType<import('./config.js').resolveConfig>} cfg
  */
-export function renderLanding(cfg) {
+export function renderLanding(cfg, origin = '') {
   const prefix = cfg.prefix
   const prefixJson = jsonForScript(prefix)
+  const canonical = origin ? `${origin}${prefix}` : ''
 
   return `<!DOCTYPE html>
 <html lang="zh-CN" data-theme="auto">
@@ -439,10 +444,12 @@ export function renderLanding(cfg) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
-<meta name="robots" content="noindex">
+<meta name="robots" content="index,follow">
+<meta name="description" content="把 GitHub 的 release 资产、源码包、raw 单文件链接换成自己的域名：字节从 Cloudflare 边缘直接给出，跟随 302、支持 Range 续传，单文件 Worker，零外部依赖。">
+${canonical ? `<link rel="canonical" href="${escapeHtml(canonical)}">` : ''}
 <title>GitHub 文件加速</title>
 <link rel="icon" type="image/svg+xml" href="${faviconHref()}">
-<style>${BASE_CSS}</style>
+<style>${CSS_MIN}</style>
 <script>${THEME_INIT}</script>
 </head>
 <body>
@@ -620,7 +627,7 @@ export function renderErrorPage(cfg, reason) {
 <meta name="robots" content="noindex">
 <title>不是可加速的 GitHub 文件</title>
 <link rel="icon" type="image/svg+xml" href="${faviconHref()}">
-<style>${BASE_CSS}</style>
+<style>${CSS_MIN}</style>
 <script>${THEME_INIT}</script>
 </head>
 <body>

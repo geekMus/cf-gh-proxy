@@ -27,6 +27,23 @@ const CORS_HEADERS = {
   'access-control-max-age': '1728000',
 }
 
+// 页面类响应的安全头。都是零成本的静态头，能过 Lighthouse 的 Best Practices
+// 里那几条「有没有声明」的检查（HSTS / XFO / COOP / nosniff / Referrer-Policy）。
+// 只加在**我们自己的页面**上：代理回来的文件是用户要下载的东西，不该被
+// X-Frame-Options 之类的东西改变语义。
+const PAGE_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'x-frame-options': 'DENY',
+  'cross-origin-opener-policy': 'same-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+}
+
+// 首页是可缓存的静态页：内容只随部署变化，没必要每个访客都回源一次。
+// s-maxage 给边缘，max-age 给浏览器；`?check=` 那类请求另有 no-store。
+const LANDING_CACHE = 'public, max-age=300, s-maxage=3600'
+
 const PREFLIGHT = {
   status: 204,
   headers: {
@@ -123,6 +140,21 @@ async function route(request, env, ctx) {
       headers: {
         'content-type': 'image/svg+xml; charset=utf-8',
         'cache-control': 'public, max-age=86400',
+        ...PAGE_HEADERS,
+      },
+    })
+  }
+
+  // ---- 5b. robots.txt ----------------------------------------------------
+  // 说明页是可以被索引的（它就是这个服务本身），给抓取方一份明确的允许规则；
+  // 不加的话 `/robots.txt` 会被当成「资源路径」走代理校验，回一个 400，
+  // 抓取工具看到的是「站点拒绝抓取」。
+  if (url.pathname.toLowerCase() === `${cfg.prefix.replace(/\/$/, '')}/robots.txt`) {
+    return new Response('User-agent: *\nAllow: /\n', {
+      headers: {
+        'content-type': 'text/plain; charset=UTF-8',
+        'cache-control': 'public, max-age=86400',
+        ...PAGE_HEADERS,
       },
     })
   }
@@ -130,7 +162,7 @@ async function route(request, env, ctx) {
   // ---- 6. 首页 -----------------------------------------------------------
   const stripped = stripPrefix(url, cfg.prefix)
   if (stripped === null) {
-    return renderHome(cfg)
+    return renderHome(cfg, url, ctx)
   }
 
   // ---- 7. 代理 -----------------------------------------------------------
@@ -183,10 +215,10 @@ function jsonResponse(obj, status = 200) {
   })
 }
 
-function htmlResponse(html) {
+function htmlResponse(html, extra = {}) {
   return new Response(html, {
     status: 200,
-    headers: { 'content-type': 'text/html; charset=UTF-8' },
+    headers: { 'content-type': 'text/html; charset=UTF-8', ...PAGE_HEADERS, ...extra },
   })
 }
 
@@ -200,14 +232,42 @@ function htmlResponse(html) {
  *   URL    → 主页伪装成该地址；设为 `nginx` 则返回 nginx 默认页
  * 都没设时返回本项目的说明页。
  */
-function renderHome(cfg) {
+function renderHome(cfg, url, ctx) {
   if (cfg.homeRedirect) {
     return Response.redirect(cfg.homeRedirect, 302)
   }
   if (cfg.disguiseNginx) {
     return htmlResponse(renderDisguise())
   }
-  return htmlResponse(renderLanding(cfg))
+  const html = renderLanding(cfg, url ? url.origin : '')
+  return cachedHtml(cfg, url, ctx, html)
+}
+
+/**
+ * 说明页是纯静态的（只依赖 prefix），但默认不会被 CF 的边缘缓存接住——
+ * 每条 HTML 请求都要真的跑到 Worker。这里显式写进 Cache API：第一个访客
+ * 之后，同一个 PoP 上的后续请求直接命中边缘，TTFB 从「绕一圈」变成几毫秒。
+ *
+ * 只在 GET 且带 ctx 时读写；Node 预览里没有 `caches`，`typeof` 兜住。
+ */
+async function cachedHtml(cfg, url, ctx, html) {
+  const headers = {
+    'content-type': 'text/html; charset=UTF-8',
+    ...PAGE_HEADERS,
+    'cache-control': LANDING_CACHE,
+  }
+  const cache = typeof caches !== 'undefined' && caches.default ? caches.default : null
+  if (!cache || !url || !ctx || typeof ctx.waitUntil !== 'function') {
+    return new Response(html, { status: 200, headers })
+  }
+
+  const key = new Request(`${url.origin}${cfg.prefix}`, { method: 'GET' })
+  const hit = await cache.match(key)
+  if (hit) return hit
+
+  const res = new Response(html, { status: 200, headers })
+  ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}))
+  return res
 }
 
 /**
@@ -255,7 +315,7 @@ function badRequest(request, cfg, reason) {
   }
   return new Response(renderErrorPage(cfg, reason), {
     status: 400,
-    headers: { 'content-type': 'text/html; charset=UTF-8', ...CORS_HEADERS },
+    headers: { 'content-type': 'text/html; charset=UTF-8', ...PAGE_HEADERS, ...CORS_HEADERS },
   })
 }
 

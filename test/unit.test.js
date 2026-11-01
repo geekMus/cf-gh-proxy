@@ -327,3 +327,31 @@ test('releases/latest 不按不可变缓存：新版本不能迟一天才出现'
     globalThis.fetch = realFetch
   }
 })
+
+test('首页可被抓取：robots 允许索引、有 description 与 canonical', async () => {
+  const res = await worker.fetch(new Request('https://gh.test/'), {}, { waitUntil() {} })
+  assert.equal(res.status, 200)
+  const html = await res.text()
+  assert.match(res.headers.get('content-type'), /text\/html/)
+  assert.match(html, /<meta name="robots" content="index,follow">/)
+  assert.doesNotMatch(html, /name="robots" content="noindex"/)
+  assert.match(html, /<meta name="description" content="[^"]{20,}">/)
+  assert.match(html, /<link rel="canonical" href="https:\/\/gh\.test\/">/)
+})
+
+test('robots.txt 是允许抓取，不是把 /robots.txt 当资源路径拒绝', async () => {
+  const res = await worker.fetch(new Request('https://gh.test/robots.txt'), {}, { waitUntil() {} })
+  assert.equal(res.status, 200)
+  assert.match(res.headers.get('content-type'), /text\/plain/)
+  const text = await res.text()
+  assert.match(text, /User-agent: \*/)
+  assert.match(text, /Allow: \//)
+})
+
+test('首页带缓存头与页面安全头（代理回来的文件不带这些）', async () => {
+  const res = await worker.fetch(new Request('https://gh.test/'), {}, { waitUntil() {} })
+  assert.match(res.headers.get('cache-control') || '', /s-maxage=3600/, '首页应允许边缘缓存')
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
+  assert.equal(res.headers.get('x-frame-options'), 'DENY')
+  assert.match(res.headers.get('strict-transport-security') || '', /max-age=31536000/)
+})

@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.6 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.7 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -1059,6 +1059,10 @@ a:focus-visible,button:focus-visible,input:focus-visible{
 .sec-h p{margin:6px 0 0;color:var(--muted);font-size:14.5px}
 `
 
+// 页面输出用的 CSS：去掉注释与行首缩进。注释是写给读源码的人看的（源码版里有），
+// 浏览器不需要；压缩后首页少 1 KB 左右，gzip 后差别很小，但白拿。
+const CSS_MIN = BASE_CSS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]+/gm, '').replace(/\n{2,}/g, '\n')
+
 // <head> 里的同步脚本：读本地存的主题，在首帧之前把 data-theme 落定，避免闪白。
 // 同时给 <html> 挂上 js 类，供需要脚本的样式使用。
 const THEME_INIT = `
@@ -1204,9 +1208,10 @@ function renderCore(prefix) {
  *
  * @param {ReturnType<import('./config.js').resolveConfig>} cfg
  */
-function renderLanding(cfg) {
+function renderLanding(cfg, origin = '') {
   const prefix = cfg.prefix
   const prefixJson = jsonForScript(prefix)
+  const canonical = origin ? `${origin}${prefix}` : ''
 
   return `<!DOCTYPE html>
 <html lang="zh-CN" data-theme="auto">
@@ -1214,10 +1219,12 @@ function renderLanding(cfg) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
-<meta name="robots" content="noindex">
+<meta name="robots" content="index,follow">
+<meta name="description" content="把 GitHub 的 release 资产、源码包、raw 单文件链接换成自己的域名：字节从 Cloudflare 边缘直接给出，跟随 302、支持 Range 续传，单文件 Worker，零外部依赖。">
+${canonical ? `<link rel="canonical" href="${escapeHtml(canonical)}">` : ''}
 <title>GitHub 文件加速</title>
 <link rel="icon" type="image/svg+xml" href="${faviconHref()}">
-<style>${BASE_CSS}</style>
+<style>${CSS_MIN}</style>
 <script>${THEME_INIT}</script>
 </head>
 <body>
@@ -1395,7 +1402,7 @@ function renderErrorPage(cfg, reason) {
 <meta name="robots" content="noindex">
 <title>不是可加速的 GitHub 文件</title>
 <link rel="icon" type="image/svg+xml" href="${faviconHref()}">
-<style>${BASE_CSS}</style>
+<style>${CSS_MIN}</style>
 <script>${THEME_INIT}</script>
 </head>
 <body>
@@ -1505,6 +1512,23 @@ const CORS_HEADERS = {
   'access-control-max-age': '1728000',
 }
 
+// 页面类响应的安全头。都是零成本的静态头，能过 Lighthouse 的 Best Practices
+// 里那几条「有没有声明」的检查（HSTS / XFO / COOP / nosniff / Referrer-Policy）。
+// 只加在**我们自己的页面**上：代理回来的文件是用户要下载的东西，不该被
+// X-Frame-Options 之类的东西改变语义。
+const PAGE_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'x-frame-options': 'DENY',
+  'cross-origin-opener-policy': 'same-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+}
+
+// 首页是可缓存的静态页：内容只随部署变化，没必要每个访客都回源一次。
+// s-maxage 给边缘，max-age 给浏览器；`?check=` 那类请求另有 no-store。
+const LANDING_CACHE = 'public, max-age=300, s-maxage=3600'
+
 const PREFLIGHT = {
   status: 204,
   headers: {
@@ -1601,6 +1625,21 @@ async function route(request, env, ctx) {
       headers: {
         'content-type': 'image/svg+xml; charset=utf-8',
         'cache-control': 'public, max-age=86400',
+        ...PAGE_HEADERS,
+      },
+    })
+  }
+
+  // ---- 5b. robots.txt ----------------------------------------------------
+  // 说明页是可以被索引的（它就是这个服务本身），给抓取方一份明确的允许规则；
+  // 不加的话 `/robots.txt` 会被当成「资源路径」走代理校验，回一个 400，
+  // 抓取工具看到的是「站点拒绝抓取」。
+  if (url.pathname.toLowerCase() === `${cfg.prefix.replace(/\/$/, '')}/robots.txt`) {
+    return new Response('User-agent: *\nAllow: /\n', {
+      headers: {
+        'content-type': 'text/plain; charset=UTF-8',
+        'cache-control': 'public, max-age=86400',
+        ...PAGE_HEADERS,
       },
     })
   }
@@ -1608,7 +1647,7 @@ async function route(request, env, ctx) {
   // ---- 6. 首页 -----------------------------------------------------------
   const stripped = stripPrefix(url, cfg.prefix)
   if (stripped === null) {
-    return renderHome(cfg)
+    return renderHome(cfg, url, ctx)
   }
 
   // ---- 7. 代理 -----------------------------------------------------------
@@ -1661,10 +1700,10 @@ function jsonResponse(obj, status = 200) {
   })
 }
 
-function htmlResponse(html) {
+function htmlResponse(html, extra = {}) {
   return new Response(html, {
     status: 200,
-    headers: { 'content-type': 'text/html; charset=UTF-8' },
+    headers: { 'content-type': 'text/html; charset=UTF-8', ...PAGE_HEADERS, ...extra },
   })
 }
 
@@ -1678,14 +1717,42 @@ function htmlResponse(html) {
  *   URL    → 主页伪装成该地址；设为 `nginx` 则返回 nginx 默认页
  * 都没设时返回本项目的说明页。
  */
-function renderHome(cfg) {
+function renderHome(cfg, url, ctx) {
   if (cfg.homeRedirect) {
     return Response.redirect(cfg.homeRedirect, 302)
   }
   if (cfg.disguiseNginx) {
     return htmlResponse(renderDisguise())
   }
-  return htmlResponse(renderLanding(cfg))
+  const html = renderLanding(cfg, url ? url.origin : '')
+  return cachedHtml(cfg, url, ctx, html)
+}
+
+/**
+ * 说明页是纯静态的（只依赖 prefix），但默认不会被 CF 的边缘缓存接住——
+ * 每条 HTML 请求都要真的跑到 Worker。这里显式写进 Cache API：第一个访客
+ * 之后，同一个 PoP 上的后续请求直接命中边缘，TTFB 从「绕一圈」变成几毫秒。
+ *
+ * 只在 GET 且带 ctx 时读写；Node 预览里没有 `caches`，`typeof` 兜住。
+ */
+async function cachedHtml(cfg, url, ctx, html) {
+  const headers = {
+    'content-type': 'text/html; charset=UTF-8',
+    ...PAGE_HEADERS,
+    'cache-control': LANDING_CACHE,
+  }
+  const cache = typeof caches !== 'undefined' && caches.default ? caches.default : null
+  if (!cache || !url || !ctx || typeof ctx.waitUntil !== 'function') {
+    return new Response(html, { status: 200, headers })
+  }
+
+  const key = new Request(`${url.origin}${cfg.prefix}`, { method: 'GET' })
+  const hit = await cache.match(key)
+  if (hit) return hit
+
+  const res = new Response(html, { status: 200, headers })
+  ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}))
+  return res
 }
 
 /**
@@ -1733,7 +1800,7 @@ function badRequest(request, cfg, reason) {
   }
   return new Response(renderErrorPage(cfg, reason), {
     status: 400,
-    headers: { 'content-type': 'text/html; charset=UTF-8', ...CORS_HEADERS },
+    headers: { 'content-type': 'text/html; charset=UTF-8', ...PAGE_HEADERS, ...CORS_HEADERS },
   })
 }
 
