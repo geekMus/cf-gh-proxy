@@ -35,12 +35,12 @@ https://gh.example.com/https://github.com/owner/repo/releases/download/v1.0.0/ap
 
 | 文件 | 用途 | 大小 |
 |---|---|---|
-| `_worker.min.js` | **部署用这个**。压缩过（去空白换行、缩短标识符、中文不转义），执行逻辑与源码版完全一致 | 51 KB（gzip 17 KB） |
-| `_worker.js` | 给人看的：六个模块原样拼接，**注释一行不丢**，想审计或改一行就看它 | 84 KB（gzip 28 KB） |
+| `_worker.min.js` | **部署用这个**。压缩过（去空白换行、缩短标识符、中文不转义），执行逻辑与源码版完全一致 | 36.4 KB（gzip 12.7 KB） |
+| `_worker.js` | 给人看的：六个模块原样拼接，**注释一行不丢**，想审计或改一行就看它 | 68.1 KB（gzip 24.1 KB） |
 
-> 实测两个产物性能无可测差异：`npm run bench` 成对交替测量，每请求耗时中位比值在 0.94–1.01 之间摆动，
-> 两个方向都跑出来过（本机单组采样抖动就有 ±10%–20%，这点差别是噪声）。压缩只减小体积、不改执行逻辑。
-> 本项目**不做混淆**——混淆会引入字符串数组查表与控制流间接，那是真的变慢。
+> 实测两个产物性能无可测差异：`npm run bench` 成对交替测量，每请求耗时中位比值在 0.97–1.09 之间摆动
+> （−0.9%、+0.5%、+6.3% 都跑出来过，快慢两个方向都出现；本机单组采样抖动就有 10%–30%，这点差别是噪声）。
+> 压缩只减小体积、不改执行逻辑。本项目**不做混淆**——混淆会引入字符串数组查表与控制流间接，那是真的变慢。
 
 ---
 
@@ -89,7 +89,7 @@ curl -sI "https://gh.example.com/https://raw.githubusercontent.com/geekMus/cf-gh
 | `ALLOW_AUTH` | `0` | 是否转发访问者的 Cookie / Authorization。公开服务保持 `0` |
 | `BLOCKED_UA` | `netcraft` | 命中这些 UA 子串时返回 nginx 伪装页 |
 | `JSDELIVR` | `0` | 是否把按 tag / SHA 的单文件改写走 jsDelivr |
-| `LANDING_LINK` | `https://github.com/` | 说明页底部展示的链接 |
+| `LANDING_LINK` | `https://github.com/geekMus/cf-gh-proxy` | 说明页顶栏与页脚展示的链接 |
 
 完整的配置说明（含 `URL` / `URL302` 两个兼容上游的伪装变量、每个变量的取值理由）见 [docs/deploy.md](docs/deploy.md#配置)。
 

@@ -1,65 +1,92 @@
-# 设计方向笔记（cf-gh-proxy 首页重做）
+# 设计方向笔记（cf-gh-proxy 首页）
+
+最后一版是**单屏工具页**：标题一句话、下面一条输入栏、页脚一行仓库地址。不滚动，不讲原理。
 
 ## idea 句
 
-> On this page, **一条 302 链被 Worker 自己跟完的直角转折** becomes **the chevron**。
+> 这一屏只做一件事：**把地址丢进去，直接从我们的链接下**。
 
-上游的做法是把 `302` 回写给客户端（客户端再请求一次 Worker），所以 90 秒才断在 20798 字节。
-本项目的实质是「把这条链在边缘跟完」——链、箭头、直角转折是这个产品独有的几何，
-不是从品类里借来的装饰。所以母题取 **chevron（一个直角转折的箭头）**，
-不用卡片网格、不用渐变、不用圆角矩形阵列。
+用户三次否掉了「讲原理的落地页」（302 追踪图、路径表、实测数字、域名 CTA），理由一致：
+他要的是「粘链接就能下」，不是一份产品介绍。所以页面上只留**一个主角**——输入栏；其余全部让位。
 
-## motif 的三四个尺度
+## 布局
 
-| 尺度 | 位置 |
-| --- | --- |
-| 96px | hero 那块饱和色平台的左上角，用 `clip-path` 切出一个直角缺口 |
-| 64px | 黑色通栏带的左边缘，同一个缺口 |
-| 20px | 「它跟的那条链」四段之间，每一跳一个 chevron |
-| 11px | 路径表每一行行首的箭头 |
+```
+顶栏  logo · GitHub 文件加速                                  主题按钮
+                     GitHub 文件，一条更快的链接
+        把 release 资产、源码包或单个文件的地址丢进去，走这条链接直接下
+   ┌───────────────────────────────────────────────────┐
+   │  https://github.com/owner/repo/releases/download/… │  加速 →
+   └───────────────────────────────────────────────────┘
+        试试   release 资产   源码包   单个文件   复制示例
+页脚                  github.com/geekMus/cf-gh-proxy · MIT
+```
 
-## 字体：为什么不是 League Spartan
+- `.shell{min-height:100svh;flex column}`，中间 `.stage` 吃掉剩余高度并居中：1440×900 与 390×844 都是**恰好一屏**，不出滚动条。
+- 标题与说明在输入栏**上方**（上下排布），没有左右分栏——这是用户明确要求的。
+- 顶栏没有导航锚点：这一屏没有可跳的分区，留锚点只会让人以为下面还有东西。
 
-skill 抽到的 display 面是 League Spartan（Google Fonts）。
-**本项目的硬约束是零外部资源**（`test/pages.test.js` 第 2 条断言：首页 `src=`/`href=` 不许出现外部地址），
-这条约束不是审美选择，是「一个 HTML 就是全部、能被边缘缓存、不产生额外请求、不受第三方可用性影响」。
-把字体嵌成 base64 又会把页面从 ~30KB 涨到几百 KB，与用户「性能一定要好」的要求直接冲突。
+## 输入栏为什么是一个整体
 
-→ **降级**：display 用系统无衬线栈，靠 700 字重 + `-0.035em` 字距 + `0.9` 行高做出同等的紧凑几何感；
-text 用同一个栈的 400/600。这是「与既定品牌约束冲突」的正当重绘，在报告里写明。
-
-同理，skill 要求「页面上至少四张真实图片」，而本项目没有截图、也不许引外部图床
-→ 按 direction sheet 自己给的替代方案：「软件的图就是它自己的界面」，
-用真实 HTML 界面片段（根节点标 `data-ui`），不用假仪表盘灰条、不用设备边框。
-
-## palette
+两个并排的方框看起来像两个东西；输入框和按钮在视觉上应该是**同一条**。
 
 ```css
---bg:#ffffff;      --surface:#f2f2f2;  --ink:#0a0a0a;  --muted:#6b6b6b;
---accent:#d92b21;  --accent-ink:#ffffff;
---band-bg:#000000; --band-ink:#ffffff;
+.bar{display:flex;align-items:center;gap:6px;padding:6px;
+     background:var(--field);box-shadow:inset 0 0 0 1px var(--surface-2)}
+.bar:hover{box-shadow:inset 0 0 0 1px var(--muted)}
+.bar:focus-within{box-shadow:inset 0 0 0 2px var(--accent)}
 ```
-白色地面 + paper grey 的实色块 + **一个全黑通栏带**；signal red 只出现在按钮、
-一个词、和 hero 那块平台上。**没有渐变**（原来那层 `radial-gradient` 的 hero 删掉，skill 明令禁止）。
 
-暗色：地面 `#0b0b0b`、paper `#171717`、ink `#f2f2f2`、accent 提亮到 `#ff5a4e`（保持对比度）。
+- 描边用 `box-shadow:inset` 而不是 `border`：边框占宽度，换色时整行会跳。
+- `#q` 自身透明无边框，`#go` 是嵌在右端的强调色块；聚焦时整条描边变亮变粗，而不是只亮输入框。
+- ≤640px 改成上下两行（输入框一行、按钮通栏），`#q` 48px / 16px 字防止 iOS 缩放。
 
-## live thing（页面上能真做的事）
+## 示例行为什么不是方框
 
-两件，都是真的：
-1. **hero 平台上就是那个输入框本身**（`data-ui` 片段，不是示意图）：粘链接 → 问 `?check=` → 跳转。
-2. **cta 那句句子里嵌一个 `input`**：填你自己的 Worker 域名，下面实时拼出你自己的加速地址。
+这一屏只该有一个「有边框的主角的」。四个带框的小卡片会把视线从输入栏抢走。所以示例是
+**安静的文字按钮**：13px、带下划线（`text-decoration-color` 用最浅的 surface-2），hover 才变强调色；
+`复制示例` 单独一枚带图标、无下划线。行首一个 `试试` 标签承担说明，不用 eyebrow。
 
-## 分区（按 direction sheet 的顺序）
+## 配色
 
-1. **hero** — Fragment on a shaped stage
-2. **features** — Close-ups on a board（8 块马赛克，每块放一个被放大的真实界面元素）
-3. **how-it-works** — One card, four fields（同一个文件卡片，四段越走越远：90s 断掉 → 1.07s 拿完）
-4. **proof** — Large marks on tiles（三个实测数字）
-5. **list** — The printed menu sheet（支持的路径，像一张印刷的菜单）
-6. **cta** — A sentence with a blank
+```css
+亮  --bg:#f6f8fb  --surface:#eef1f6  --field:#ffffff  --ink:#1b2634  --muted:#5b6b7c  --accent:#2f6f9f
+暗  --bg:#101519  --surface:#171d24  --field:#0b1014  --ink:#e2e9f0  --muted:#93a2b3  --accent:#7fb4d4
+```
 
-## 两条 blueprint 与本页的冲突（已按 house rules 优先解决）
+- 不用纯黑纯白：亮色地面是偏蓝的灰白，暗色是带蓝的墨色，长时间看不刺眼。
+- 单一强调色（青蓝）。按钮、聚焦描边、链接 hover 都用它，不出现第二种彩色。
+- 实测对比度（两套都测）：标题 14.4 / 15.0、说明 5.1 / 7.1、按钮字 5.4 / 8.5、输入框字 15.3 / 15.6，全部过 AA。
+- **网格背景**是两层 SVG data URI（32px 细线 opacity .052 + 128px 主线 .075），`body::before{position:fixed}`。
+  不用 CSS 渐变——house rule 明令禁止，而且渐变网格在暗色下会泛出光晕。
 
-- features 蓝图写 10px 字 → house rule 最小 13px，用 13px。
-- cta 蓝图把句子设到 6vw → 会被判卷当成长标题，压到 `clamp(24px,3.2vw,40px)` 两到三行。
+## 标志
+
+一枚**直角转折箭头**（`M5 8.5h10v9h3` + 箭头三角，stroke-width 4，viewBox 32）：它就是 302 链在边缘拐弯走完的动作。
+16px 下是一块粗壮实心图形，不会糊成灰点。顶栏只画 accent 色的线，不用色块底；
+favicon 用同一几何，换 `#2f6f9f` 底色 + 白色描边，由 Worker 直接以 `image/svg+xml` 返回。
+
+## 为什么没有 webfont（inspector 的唯一 FAIL，显式放行）
+
+`inspect.mjs --app` 判 `[font-not-dealt]`：素材单抽到 League Spartan / Figtree，而页面渲染 `-apple-system`。
+
+**这是约束冲突，不是偷懒**：`test/pages.test.js` 断言首页 `src=`/`href=` 里不许出现外部地址，
+零外部资源是这个产品的卖点（一个 HTML 就是全部、能被边缘缓存、不受第三方可用性影响）。
+把字体 base64 内嵌会把 19.8 KB 的首页撑到几百 KB，与「性能一定要好」直接冲突。
+
+→ 用 `--allow font-not-dealt` 放行，正文用系统栈（`-apple-system` 这一串），靠字重与字距做紧凑感。
+
+## inspector 结果（app 模式）
+
+`node inspect.mjs http://127.0.0.1:8800/ --app --allow font-not-dealt`
+
+- **0 FAIL / 0 WARN**，`page 1 screens`，h1 一行（32px；@768 24px，@390 23px），字号档位 13 / 15 / 16 / 32。
+- 单屏工具页在 `--app` 下本来就不判 `few-pictures` / `still-page` / `off-centre` / `name-only-title` / `small-text`
+  （`rules.mjs` 的 `APP_SKIP`）——这一屏的形态就是「一个输入框 + 一个按钮」，没有「客户的世界」可拍。
+- 动效：`.anim` 按 50ms 递进浮入（标题 → 说明 → 输入栏 → 示例行），`prefers-reduced-motion` 全关。
+  没有滚动，也就没有滚动触发的东西——所以 `still-page` 不适用。
+
+## 被否掉的旧方向（留档，别再回去）
+
+- 白底 + paper grey + 全黑通栏 + signal red `#d92b21` 的四段式落地页（302 追踪、路径表、三个数字、域名 CTA）。
+- 把「上一版」的对比、其他项目的名字写进页面——用户要求本页只代表本仓库。

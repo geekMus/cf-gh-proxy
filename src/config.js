@@ -10,7 +10,7 @@
 // ============================================================================
 
 const DEFAULT_BLOCKED_UA = ['netcraft']
-const DEFAULT_LANDING_LINK = 'https://github.com/'
+const DEFAULT_LANDING_LINK = 'https://github.com/geekMus/cf-gh-proxy'
 
 /** 把 '/gh' / 'gh' / '/gh/' 都归一成 '/gh/'；'/' 保持 '/' */
 function normalizePrefix(raw) {

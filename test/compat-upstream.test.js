@@ -47,7 +47,7 @@ test('空字符串等同于不设', () => {
   assert.equal(cfg.disguiseNginx, false)
 })
 
-test('LANDING_LINK 默认为 GitHub 首页', () => {
-  assert.equal(resolveConfig({}).landingLink, 'https://github.com/')
+test('LANDING_LINK 默认为本仓库地址', () => {
+  assert.equal(resolveConfig({}).landingLink, 'https://github.com/geekMus/cf-gh-proxy')
   assert.equal(resolveConfig({ LANDING_LINK: 'https://example.org/' }).landingLink, 'https://example.org/')
 })

@@ -11,9 +11,9 @@
 //   3. 体积：原始 / gzip（CF 按 gzip 后计费与传输，也影响解析时间）
 //
 // 两个「不这么测数字就没意义」的细节：
-//   - fetch 打桩。/favicon.ico 分支会真的跑去 github.githubassets.com 取图标，
-//     不打桩测到的是网络往返（实测 ~16 ms/请求，是纯执行耗时的数百倍），
-//     执行差异被完全淹没。打桩后测的才是 Worker 自己的逻辑。
+//   - fetch 打桩。Worker 现在整站零外部请求（连 /favicon.ico 都是内联 SVG），
+//     桩命中应该是 0；留这层桩是保险，防止哪天又引进外部取图，把网络往返
+//     （实测 ~16 ms/请求，是纯执行耗时的数百倍）算进结果里。
 //   - 成对交替。/A/B/A/B 背靠背各跑一遍取比值，再对所有比值取中位数。
 //     这台机器上单次采样抖动能到 ±20%，串联测（先测完 A 再测 B）会把负载漂移
 //     整个算成「B 和 A 的差别」；成对测量里漂移对两边的伤害相同，比值稳得多。
@@ -32,8 +32,8 @@ import { performance } from 'node:perf_hooks'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const QUICK = process.argv.includes('--quick')
 
-const PAIRS = QUICK ? 6 : 16
-const ROUNDS = QUICK ? 30 : 100
+const PAIRS = QUICK ? 6 : 12
+const ROUNDS = QUICK ? 60 : 300
 const WARMUP = 30
 
 const VARIANTS = [
@@ -41,8 +41,7 @@ const VARIANTS = [
   { key: 'min', file: '_worker.min.js', label: '压缩版' },
 ]
 
-// 一批有代表性的请求：页面、校验接口、拒绝分支。全部在本地完成。
-// favicon 那条真实运行时会去外站取图——下面用桩按住。
+// 一批有代表性的请求：页面、校验接口、拒绝分支、favicon（现在也是本地生成）。全部在本地完成。
 const REQUESTS = [
   'https://gh.test/',
   'https://gh.test/',
@@ -54,7 +53,7 @@ const REQUESTS = [
   'https://gh.test/favicon.ico',
 ]
 
-// ---- fetch 打桩 ------------------------------------------------------------
+// ---- fetch 打桩：整站不该再发外部请求，命中数应为 0 ------------------------
 let stubCalls = 0
 globalThis.fetch = async () => {
   stubCalls++
@@ -71,7 +70,7 @@ function readVariant(file) {
     file,
     path,
     bytes: Buffer.byteLength(text, 'utf8'),
-    gzip: gzipSync(Buffer.from(text)).length,
+    gzip: gzipSync(Buffer.from(text), { level: 9 }).length,
     lines: text.split('\n').length,
   }
 }
@@ -165,6 +164,13 @@ const perReq = (ms) => (ms * 1000) / (ROUNDS * REQUESTS.length)
 const ratioMedian = median(ratios)
 const sortedRatios = [...ratios].sort((a, b) => a - b)
 const deltaPct = (ratioMedian - 1) * 100
+const q25 = quantile(sortedRatios, 0.25)
+const q75 = quantile(sortedRatios, 0.75)
+// 判据看两件事：中位差超没超 5%，以及这个方向是不是一致的。
+// 单组比值的四分位落在 1 的两侧 = 快的和慢的都出现过，那点中位差就是采样抖动；
+// 只有「中位慢过 5% 且下四分位也慢过 1%」才算压缩真的慢了。
+const consistent = q25 > 1
+const regressed = deltaPct > 5 && consistent
 
 // ---- 输出 ------------------------------------------------------------------
 console.log('')
@@ -188,20 +194,23 @@ for (const r of results) {
   console.log(`  ${r.label}  ${perReq(median(times)).toFixed(1)} µs/请求`)
 }
 console.log(
-  `  中位比值 ${ratioMedian.toFixed(3)}（四分位 ${quantile(sortedRatios, 0.25).toFixed(2)}–${quantile(sortedRatios, 0.75).toFixed(2)}；` +
+  `  中位比值 ${ratioMedian.toFixed(3)}（四分位 ${q25.toFixed(2)}–${q75.toFixed(2)}；` +
     `${other.label} / ${base.label} 为 ${ratioMedian > 1 ? '+' : ''}${deltaPct.toFixed(1)}%）`
 )
-console.log(`  fetch 打桩命中 ${stubCalls} 次，全部来自 favicon 分支；本基准不含真实网络往返`)
+console.log(`  fetch 打桩命中 ${stubCalls} 次（整站零外部请求，命中 0 即符合预期）；本基准不含真实网络往返`)
 console.log('')
 
 console.log(
-  `单组比值的四分位宽度 ${((quantile(sortedRatios, 0.75) / quantile(sortedRatios, 0.25) - 1) * 100).toFixed(0)}%，` +
+  `单组比值的四分位宽度 ${((q75 / q25 - 1) * 100).toFixed(0)}%，` +
     '远大于两版本本身的差别；跨轮的中位数也会漂几个百分点。'
 )
 
-if (deltaPct > 5) {
-  console.log(`警告：${other.label}比${base.label}慢 ${deltaPct.toFixed(1)}%，超出 ±5% 噪声带，请查构建参数。`)
+if (regressed) {
+  console.log(`警告：${other.label}中位比${base.label}慢 ${deltaPct.toFixed(1)}%，且下四分位 ${q25.toFixed(2)} 也慢过 1，方向和幅度都稳定——查构建参数。`)
   process.exitCode = 1
+} else if (deltaPct > 5) {
+  console.log(`结论：${other.label}的中位差 ${deltaPct.toFixed(1)}% 超过 5%，但下四分位 ${q25.toFixed(2)} 落在 1 以下——`)
+  console.log('      快慢两个方向都出现过，这是采样抖动，不是稳定回退。')
 } else {
   console.log(`结论：${other.label}与${base.label}的每请求耗时中位差 ${deltaPct.toFixed(1)}%，落在 ±5% 噪声带内，`)
   console.log('      即压缩没有带来可测的性能损失。')

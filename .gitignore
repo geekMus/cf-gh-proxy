@@ -15,3 +15,7 @@ _cmsg.txt
 .taste-skill/light/
 .taste-skill/crop-*.png
 .taste-skill/*.json.bak
+.taste-skill/new/
+.taste-skill/final/
+.taste-skill/logo-lab.html
+.taste-skill/serve.mjs
