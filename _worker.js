@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.13 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.14 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -1114,7 +1114,7 @@ export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
 // 版本号只在「页面右下角」露一次：它是元信息，不是身份，和顶栏的品牌不是一回事；
 // 放顶栏会在 390px 上跟主题按钮抢位置。改版本时这里和 package.json 要一起改，
 // 测试会核对两者一致（见 test/pages.test.js）。
-export const VERSION = '1.2.13'
+export const VERSION = '1.2.14'
 
 // 右下角那行小字。放在 .stage 之后：.stage 有 flex:1，于是它自然贴在视口底部，
 // 右边缘与顶栏图标对齐，不占中间的操作区。
@@ -1279,15 +1279,45 @@ ${THEME_CYCLE}
     return 'https://github.com/'+v;
   }
 
+  // 本地形态判定：只认 GitHub 上「能下下来的文件」，规则与后端 validate.js 同形。
+  // 这一层是为了在点按钮的那一刻就拦下明显不对的输入（少开一个空白标签页），
+  // 全程不发网络。真正的判定仍归后端——从地址栏直接敲进来的地址，由错误页拒绝。
+  var HOSTS=['github.com','raw.githubusercontent.com','codeload.github.com','gist.github.com','gist.githubusercontent.com','api.github.com','release-assets.githubusercontent.com','objects.githubusercontent.com','github.githubassets.com','avatars.githubusercontent.com','user-images.githubusercontent.com','private-user-images.githubusercontent.com'];
+  function looksLikeFile(href){
+    var u;
+    try{ u=new URL(href); }catch(e){ return '这不是一个能解析的链接'; }
+    if(u.protocol!=='http:'&&u.protocol!=='https:') return '只支持 http / https 链接';
+    var host=u.hostname.toLowerCase();
+    if(HOSTS.indexOf(host)<0) return '只代理 GitHub 上的文件，'+host+' 不在支持名单里';
+    var p=u.pathname.split('/').filter(Boolean);
+    var kind=p[2];
+    if(host==='github.com'){
+      if(p.length<3) return '要粘贴完整的文件地址，例如 /<owner>/<repo>/releases/download/…';
+      if(kind==='releases'){
+        if(p[3]==='download'||(p[3]==='latest'&&p[4]==='download')) return '';
+        return '/releases 是网页，资产地址要带 /download/';
+      }
+      if(kind==='archive') return p.length>=4?'':'源码包地址要写成 /archive/refs/heads/<分支>.zip';
+      if(kind==='blob'||kind==='raw') return p.length>=4?'':'文件地址要写成 /<blob|raw>/<分支>/<路径>';
+      return '只代理 release 资产、源码包、raw 与 blob；/<owner>/<repo>/'+kind+' 不在支持范围内';
+    }
+    if(host==='raw.githubusercontent.com') return p.length>=4?'':'raw 地址要写成 /<owner>/<repo>/<分支>/<路径>';
+    if(host==='codeload.github.com') return (p.length>=4&&/^(zip|tar\.gz|tgz|legacy\.zip|legacy\.tar\.gz)$/i.test(kind||''))?'':'源码包地址要写成 /<owner>/<repo>/(zip|tar.gz)/<分支>';
+    if(host==='gist.github.com') return (p.length>=3&&kind==='raw')?'':'gist 网页不代理，要用带 /raw 的地址';
+    return '';
+  }
+
   // 点「加速」直接在**新标签页**里打开代理地址：一个标签页、一次导航，不再先
   // fetch 一次 ?check= 再去导航。那条路要多一个完整往返（实测 0.6 s）加一个空白页
-  // 的等待，而校验要判断的东西后端在渲染这份响应时同样有——地址不是文件时，
-  // 错误页会直接出现在这个标签页里，比先问一句再跳更省一次 RTT。
+  // 的等待。形态不对的输入在上面就被 looksLikeFile 拦下了；形态对但后端仍不认的
+  // （比如分支名不合法），错误页会出现在那个标签页里。
   function submit(){
     var raw=input.value||'';
     if(!raw.trim()){ showTip('先粘一个 GitHub 链接进来'); input.focus(); return; }
     var href=normalize(raw);
     if(!href){ showTip('只支持 http / https 链接'); input.focus(); return; }
+    var bad=looksLikeFile(href);
+    if(bad){ showTip(bad); input.focus(); return; }
     var target=location.origin+PREFIX+href;
     hideTip();
 

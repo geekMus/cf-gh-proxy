@@ -269,6 +269,44 @@ test('?check= 与真实代理的判定必须一致（同一套规则，不许漂
   }
 })
 
+test('页面内的本地形态判定与 ?check= 结论一致（前端不许说「能」，后端说「不能」）', async () => {
+  const html = renderLanding(CFG)
+  const start = html.indexOf('var HOSTS=')
+  const end = html.indexOf('  // 点「加速」')
+  assert.notEqual(start, -1, '页面里找不到本地判定 looksLikeFile')
+  assert.notEqual(end, -1, '页面里找不到提交函数 submit')
+  // 把那段纯函数抠出来直接跑：它只依赖 URL 与 HOSTS，不碰 DOM。
+  const looksLikeFile = new Function('URL', html.slice(start, end) + '\nreturn looksLikeFile;')(URL)
+
+  const cases = [
+    // 该放行的
+    'https://github.com/o/r/releases/download/v1/x.zip',
+    'https://github.com/o/r/releases/latest/download/x.zip',
+    'https://github.com/o/r/archive/refs/heads/main.zip',
+    'https://github.com/o/r/blob/main/README.md',
+    'https://github.com/o/r/raw/main/a.js',
+    'https://raw.githubusercontent.com/o/r/main/a.js',
+    'https://codeload.github.com/o/r/zip/main',
+    'https://gist.github.com/u/abc123/raw',
+    'https://gist.githubusercontent.com/u/abc123',
+    'https://api.github.com/repos/o/r/releases/latest',
+    // 该拦下的
+    'https://github.com/o/r',
+    'https://github.com/login',
+    'https://github.com/o/r/tree/main',
+    'https://github.com/o/r/releases',
+    'https://example.com/x.zip',
+    'https://raw.githubusercontent.com/o/r/main',
+    'https://gist.github.com/u/abc123',
+  ]
+  for (const link of cases) {
+    const clientOk = looksLikeFile(link) === ''
+    const checkRes = await callWorker('/?check=' + encodeURIComponent(link))
+    const { ok } = await checkRes.json()
+    assert.equal(clientOk, ok, `${link}：前端判定「${clientOk ? '放行' : '拦下'}」，后端 ?check= 判定「${ok ? '放行' : '拦下'}」`)
+  }
+})
+
 // ---------------------------------------------------------------------------
 // 5. 1101 防线：异常必须被兜住
 // ---------------------------------------------------------------------------
