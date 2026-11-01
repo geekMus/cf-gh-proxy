@@ -43,54 +43,60 @@ export default {
    * @param {{ waitUntil(p: Promise<unknown>): void }} ctx
    */
   async fetch(request, env, ctx) {
-    const cfg = resolveConfig(env)
-    const url = new URL(request.url)
-
-    // ---- 1. 伪装：命中屏蔽 UA 时返回 nginx 页 ------------------------------
-    const ua = (request.headers.get('User-Agent') || '').toLowerCase()
-    if (cfg.blockedUAs.length && cfg.blockedUAs.some((k) => ua.includes(k))) {
-      return new Response(renderDisguise(), {
-        status: 200,
-        headers: { 'content-type': 'text/html; charset=UTF-8' },
-      })
-    }
-
-    // ---- 2. CORS 预检 ------------------------------------------------------
-    if (request.method === 'OPTIONS' && request.headers.has('access-control-request-headers')) {
-      return new Response(null, PREFLIGHT)
-    }
-
-    // ---- 3. ?q= 便捷入口：把裸链接转成前缀形式 -----------------------------
-    const q = url.searchParams.get('q')
-    if (q) {
-      const target = buildTargetUrl(q)
-      if (!target) {
-        return badRequest(request, cfg, '无法解析这个链接')
+    // 最外层兜底：任何没预料到的异常都在这里收住。
+    //
+    // 为什么必须有这一层：Worker 里抛出的异常在 Cloudflare 上表现为 1101
+    // （「Worker threw exception」），客户端只拿到一个空白错误页，日志之外
+    // 没有任何线索。把异常转成一个可读的 500，既能让用户知道发生了什么，
+    // 也能避免「页面全白」这种最难排查的形态。
+    try {
+      return await route(request, env, ctx)
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err)
+      try {
+        return textResponse(`内部错误：${msg}`, 500)
+      } catch {
+        // 连 textResponse 都失败（极罕见）时，给一个绝对最小化的响应
+        return new Response('Internal Error', { status: 500 })
       }
-      const verdict = checkTarget(target)
-      if (!verdict.ok) {
-        return badRequest(request, cfg, verdict.reason || '这个链接不是可加速的 GitHub 文件')
-      }
-      // 用 302 而不是 301：301 会被浏览器永久缓存，之后换域名/换前缀就再也回不来。
-      return Response.redirect(`${url.origin}${cfg.prefix}${target.href}`, 302)
     }
+  },
+}
 
-    // ---- 4. favicon -------------------------------------------------------
-    if (url.pathname.toLowerCase() === `${cfg.prefix.replace(/\/$/, '')}/favicon.ico`) {
-      const light = 'https://github.githubassets.com/favicons/favicon.png'
-      const dark = 'https://github.githubassets.com/favicons/favicon-dark.png'
-      const preferLight = request.headers.get('sec-ch-prefers-color-scheme') === 'light'
-      return fetch(preferLight ? light : dark, { cf: { cacheTtl: 86400 } })
-    }
+/**
+ * 真正的路由。所有分支都在 `fetch` 的 try 里被保护。
+ *
+ * @param {Request} request
+ * @param {Record<string, unknown>} env
+ * @param {{ waitUntil(p: Promise<unknown>): void }} ctx
+ */
+async function route(request, env, ctx) {
+  const cfg = resolveConfig(env)
+  const url = new URL(request.url)
 
-    // ---- 5. 首页 -----------------------------------------------------------
-    const stripped = stripPrefix(url, cfg.prefix)
-    if (stripped === null) {
-      return renderHome(cfg)
-    }
+  // ---- 1. 伪装：命中屏蔽 UA 时返回 nginx 页 ------------------------------
+  const ua = (request.headers.get('User-Agent') || '').toLowerCase()
+  if (cfg.blockedUAs.length && cfg.blockedUAs.some((k) => ua.includes(k))) {
+    return htmlResponse(renderDisguise())
+  }
 
-    // ---- 6. 代理 -----------------------------------------------------------
-    const target = buildTargetUrl(stripped)
+  // ---- 2. CORS 预检 ------------------------------------------------------
+  if (request.method === 'OPTIONS' && request.headers.has('access-control-request-headers')) {
+    return new Response(null, PREFLIGHT)
+  }
+
+  // ---- 3. ?check= 校验接口 -----------------------------------------------
+  // 首页那个输入框用它做「先问再跳」。这样前端不需要维护第二份校验规则：
+  // 页面说什么、服务端就做什么，永远不会漂移（上一版就是两份规则各自演化）。
+  const checkRaw = url.searchParams.get('check')
+  if (checkRaw) {
+    return handleCheck(checkRaw)
+  }
+
+  // ---- 4. ?q= 便捷入口：把裸链接转成前缀形式 -----------------------------
+  const q = url.searchParams.get('q')
+  if (q) {
+    const target = buildTargetUrl(q)
     if (!target) {
       return badRequest(request, cfg, '无法解析这个链接')
     }
@@ -98,15 +104,79 @@ export default {
     if (!verdict.ok) {
       return badRequest(request, cfg, verdict.reason || '这个链接不是可加速的 GitHub 文件')
     }
+    // 用 302 而不是 301：301 会被浏览器永久缓存，之后换域名/换前缀就再也回不来。
+    return Response.redirect(`${url.origin}${cfg.prefix}${target.href}`, 302)
+  }
 
-    // /blob/ 是网页，换成 raw 才能拿到文件字节（见 maybeRewriteBlob 注释）
-    const rawTarget = maybeRewriteBlob(target) || target
+  // ---- 5. favicon -------------------------------------------------------
+  if (url.pathname.toLowerCase() === `${cfg.prefix.replace(/\/$/, '')}/favicon.ico`) {
+    const light = 'https://github.githubassets.com/favicons/favicon.png'
+    const dark = 'https://github.githubassets.com/favicons/favicon-dark.png'
+    const preferLight = request.headers.get('sec-ch-prefers-color-scheme') === 'light'
+    return fetch(preferLight ? light : dark, { cf: { cacheTtl: 86400 } })
+  }
 
-    // 可选：分支单文件改写走 jsDelivr（默认关闭，见 maybeJsdelivrUrl 注释）
-    const viaCdn = maybeJsdelivrUrl(rawTarget, cfg)
+  // ---- 6. 首页 -----------------------------------------------------------
+  const stripped = stripPrefix(url, cfg.prefix)
+  if (stripped === null) {
+    return renderHome(cfg)
+  }
 
-    return handleProxy(request, viaCdn || rawTarget, cfg, ctx)
-  },
+  // ---- 7. 代理 -----------------------------------------------------------
+  const target = buildTargetUrl(stripped)
+  if (!target) {
+    return badRequest(request, cfg, '无法解析这个链接')
+  }
+  const verdict = checkTarget(target)
+  if (!verdict.ok) {
+    return badRequest(request, cfg, verdict.reason || '这个链接不是可加速的 GitHub 文件')
+  }
+
+  // /blob/ 是网页，换成 raw 才能拿到文件字节（见 maybeRewriteBlob 注释）
+  const rawTarget = maybeRewriteBlob(target) || target
+
+  // 可选：分支单文件改写走 jsDelivr（默认关闭，见 maybeJsdelivrUrl 注释）
+  const viaCdn = maybeJsdelivrUrl(rawTarget, cfg)
+
+  return handleProxy(request, viaCdn || rawTarget, cfg, ctx)
+}
+
+/**
+ * `?check=<链接>` 的应答。永远返回 200 + JSON（它是一个「询问」，
+ * 不是一个失败），让前端只写一条 happy path。
+ *
+ * 响应带 no-store：校验结果不能进 CDN 缓存，否则换了目标却拿到旧结论。
+ *
+ * @param {string} raw 用户给的原始链接
+ */
+function handleCheck(raw) {
+  const target = buildTargetUrl(raw)
+  if (!target) {
+    return jsonResponse({ ok: false, reason: '无法解析这个链接' })
+  }
+  const verdict = checkTarget(target)
+  if (!verdict.ok) {
+    return jsonResponse({ ok: false, reason: verdict.reason || '这个链接不是可加速的 GitHub 文件' })
+  }
+  return jsonResponse({ ok: true, href: target.href, kind: verdict.kind || '' })
+}
+
+function jsonResponse(obj, status = 200) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: {
+      'content-type': 'application/json; charset=UTF-8',
+      'cache-control': 'no-store',
+      ...CORS_HEADERS,
+    },
+  })
+}
+
+function htmlResponse(html) {
+  return new Response(html, {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=UTF-8' },
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -124,15 +194,9 @@ function renderHome(cfg) {
     return Response.redirect(cfg.homeRedirect, 302)
   }
   if (cfg.disguiseNginx) {
-    return new Response(renderDisguise(), {
-      status: 200,
-      headers: { 'content-type': 'text/html; charset=UTF-8' },
-    })
+    return htmlResponse(renderDisguise())
   }
-  return new Response(renderLanding(cfg), {
-    status: 200,
-    headers: { 'content-type': 'text/html; charset=UTF-8' },
-  })
+  return htmlResponse(renderLanding(cfg))
 }
 
 /**
