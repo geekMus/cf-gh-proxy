@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.10 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.11 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -901,6 +901,9 @@ body::before{
   text-align:center;
 }
 .core{width:100%;max-width:660px}
+
+/* 右下角的版本号：一行小字，右边缘与顶栏图标对齐，不占中间的操作区。 */
+.ver{margin-top:10px;align-self:flex-end;font-size:13px;line-height:1;color:var(--muted);letter-spacing:.01em}
 h1{
   margin:0 0 12px;
   font-size:clamp(24px,2.8vw,32px);
@@ -1063,7 +1066,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{
 `
 
 // 页面输出用的 CSS：去掉注释与行首缩进。注释是写给读源码的人看的（源码版里有），
-// 浏览器不需要；压缩后首页少 1 KB 左右，gzip 后差别很小，但白拿。
+// 浏览器不需要；删掉是白拿的：体积与解析都省一点。
 const CSS_MIN = BASE_CSS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]+/gm, '').replace(/\n{2,}/g, '\n')
 
 // <head> 里的同步脚本：读本地存的主题，在首帧之前把 data-theme 落定，避免闪白。
@@ -1130,6 +1133,17 @@ export const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
 // 仓库地址写死在这里，不做成环境变量：这个页面属于本项目，别人的 fork 要改，
 // 改这一行就行；留一个 LANDING_LINK 只会让线上多一个「指向别处」的入口。
 export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
+
+// 版本号只在「页面右下角」露一次：它是元信息，不是身份，和顶栏的品牌不是一回事；
+// 放顶栏会在 390px 上跟主题按钮抢位置。改版本时这里和 package.json 要一起改，
+// 测试会核对两者一致（见 test/pages.test.js）。
+export const VERSION = '1.2.11'
+
+// 右下角那行小字。放在 .stage 之后：.stage 有 flex:1，于是它自然贴在视口底部，
+// 右边缘与顶栏图标对齐，不占中间的操作区。
+function renderVer() {
+  return `<div class="ver" title="当前版本">v${VERSION}</div>`
+}
 
 const GITHUB_MARK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>'
 
@@ -1240,6 +1254,7 @@ ${canonical ? `<link rel="canonical" href="${escapeHtml(canonical)}">` : ''}
   <main class="stage">
     ${renderCore(prefix)}
   </main>
+  ${renderVer()}
 </div>
 <script>
 ${THEME_CYCLE}
@@ -1446,6 +1461,7 @@ function renderErrorPage(cfg, reason, origin = '') {
 
   <p><a class="back" href="${escapeHtml(home)}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8h-11M6.5 3.5 2 8l4.5 4.5"/></svg>回到首页重新输入</a></p>
 
+  ${renderVer()}
 </div>
 <script>${THEME_CYCLE}</script>
 </body>

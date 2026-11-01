@@ -18,10 +18,11 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 
 import worker from '../src/index.js'
-import { renderLanding, renderErrorPage, renderDisguise, REPO_URL } from '../src/pages.js'
+import { renderLanding, renderErrorPage, renderDisguise, REPO_URL, VERSION } from '../src/pages.js'
 import { resolveConfig } from '../src/config.js'
 
 const CFG = resolveConfig({})
@@ -84,6 +85,15 @@ test('首页：没有引用任何外部资源（零外部依赖是硬约束）',
   const allowed = [REPO_URL]
   const unexpected = refs.filter((r) => !allowed.includes(r))
   assert.deepEqual(unexpected, [], `不该引用外部资源，发现：${unexpected.join(', ')}`)
+})
+
+test('右下角显示版本号，且与 package.json 一致（发版只改一处必被发现）', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(VERSION, pkg.version, '页脚版本号必须与 package.json 同步')
+  const re = new RegExp(`<div class="ver" title="当前版本">v${VERSION.replace(/\./g, '\\.')}</div>`)
+  for (const html of [renderLanding(CFG), renderErrorPage(CFG, '测试原因')]) {
+    assert.match(html, re, '首页与错误页都要显示版本号')
+  }
 })
 
 test('顶栏：logo 整块是回首页的链接（首页与错误页都有）', () => {

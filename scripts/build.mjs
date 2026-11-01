@@ -93,7 +93,7 @@ async function bundleMin() {
       // banner 在落盘前统一拼（见 writeArtifact），避免影响压缩率
       legalComments: 'none',
       // 关键：默认 charset 是 'ascii'，会把每个汉字转义成 \uXXXX（3 字节变 6 字节）。
-      // 本项目界面文案与错误原因全是中文，实测转义会让压缩版多出 5.6 KB。
+      // 本项目界面文案与错误原因全是中文，实测转义会明显变大。
       charset: 'utf8',
       logLevel: 'warning',
     })

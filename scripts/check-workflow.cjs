@@ -75,7 +75,7 @@ for (const file of ['_worker.min.js', '_worker.js']) {
   if (fs.existsSync(minP) && fs.existsSync(srcP)) {
     const min = fs.statSync(minP).size
     const src = fs.statSync(srcP).size
-    ck('压缩版小于源码版', min < src, `${src} → ${min}（省 ${src - min} 字节）`)
+    ck('压缩版小于源码版', min < src, `${src} → ${min}`)
   }
 }
 
