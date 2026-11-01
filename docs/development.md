@@ -5,13 +5,13 @@
 ## 开发
 
 ```bash
-npm test                # 93 个单元测试，纯桩无网络
+npm test                # 96 个单元测试，纯桩无网络
 npm run check           # 语法检查（六个模块逐个 node --check）
 npm run build           # 构建两个产物：_worker.min.js + _worker.js
 npm run test:build      # 验证两个产物与源码行为一致（40 项断言）
 npm run bench           # 两个产物的性能基准（冷启动 / 吞吐 / 体积）
 npm run verify          # 全套：语法 + 单测 + 构建 + 等价性
-node scripts/live-check.mjs   # 真机联调（需联网，32 项断言）
+node scripts/live-check.mjs   # 真机联调（需联网，31 项断言）
 node scripts/check-disguise.mjs  # 伪装页三变量组合（12 项断言）
 node scripts/check-workflow.cjs  # 校验 CI 配置本身（40 项断言）
 npx wrangler tail       # 看线上实时日志
@@ -25,19 +25,19 @@ npx wrangler tail       # 看线上实时日志
 
 | 产物 | 给谁 | 特点 |
 |---|---|---|
-| `_worker.min.js` | **部署用这个** | esbuild 压缩：去空白换行、缩短标识符、中文不转义。37.4 KB（gzip 13.2 KB） |
-| `_worker.js` | 给人看的 | 六个模块按依赖顺序拼接，**注释一行不丢**。70.7 KB（gzip 25.3 KB）。也能直接跑 |
+| `_worker.min.js` | **部署用这个** | esbuild 压缩：去空白换行、缩短标识符、中文不转义。38.8 KB（gzip 13.7 KB） |
+| `_worker.js` | 给人看的 | 六个模块按依赖顺序拼接，**注释一行不丢**。76.6 KB（gzip 27.8 KB）。也能直接跑 |
 
 两个都是单文件 ESM：零 import、零 require、保留 `export default { fetch }`。
 
 **两个版本是怎么产出的（不一样，别以为是同一套流程跑两遍）**：
 
-- **压缩版**走 esbuild（`minify: true`、`charset: 'utf8'`）。`charset` 是关键：esbuild 默认 `'ascii'`，会把每个汉字转义成 `\uXXXX`，3 字节变 6 字节。本项目界面文案与错误原因全是中文，实测转义让压缩版白白多出 5.6 KB（57,351 → 51,734 字节，未含版本横幅）。改 `utf8` 只改文件编码，不改行为。
+- **压缩版**走 esbuild（`minify: true`、`charset: 'utf8'`）。`charset` 是关键：esbuild 默认 `'ascii'`，会把每个汉字转义成 `\uXXXX`，3 字节变 6 字节。本项目界面文案与错误原因全是中文，实测转义让压缩版白白多出 3.2 KB（41,142 → 37,860 字节，未含版本横幅）。改 `utf8` 只改文件编码，不改行为。
 - **源码版不走 esbuild**。esbuild 即使 `minify: false` 也会把 `//` 注释全部剥掉（只有 `legalComments` 管法务注释），那样产出的「源码版」只剩代码骨架——对「方便用户自己看」这个目的等于没有。所以源码版由 `buildSource()` 按拓扑序拼接 `config → validate → proxy → upstream → pages → index`：只删 `import` 行、把 `export function` 还原成 `function`，其余原样保留。六个模块已核查**无同名顶层声明**，拼接安全。
-  - 拼接后立刻核对注释完整性：源文件共 191 行 `//`，产物必须不少于这个数（少了就说明注释被吞，脚本直接 `exit 1`）。
+  - 拼接后立刻核对注释完整性：源文件共 225 行 `//`，产物必须不少于这个数（少了就说明注释被吞，脚本直接 `exit 1`）。
   - 行为等价由 `npm run test:build` 兜底：同一组 12 个请求分别打 `src/index.js` 和两个产物，逐项比对状态码 / 头 / 正文 sha256。
 
-**为什么不做混淆**：混淆会引入字符串数组查表和控制流间接，那是真正的性能损失。`npm run bench` 用「成对交替 + 中位数」测稳态每请求耗时：`fetch` 先打桩（留作保险——Worker 现在整站零外部请求，桩命中应为 0；早先 `/favicon.ico` 会去 `github.githubassets.com` 取图，不桩的话每请求测到的是 16 ms 网络往返，执行差异整个被淹掉），两个产物背靠背各跑一遍取比值，再对所有比值取中位数（串联测会把机器负载漂移算成两边的差别）。多轮实测中位比值在 0.97–1.09 之间摆动（−0.9%、+0.5%、+6.3% 都出现过，快慢两个方向都有），单组比值的四分位宽度还有 10%–30%，这一点中位差就是噪声。所以判据不是「中位差 <5%」一条，而是**中位差 >5% 且下四分位也 >1** 才算稳定回退——四分位横跨 1 就说明两边都赢过，方向不固定。压缩只用来减小体积——gzip 后 13.2 KB vs 25.3 KB，上传更快、解析更省，执行逻辑不动。
+**为什么不做混淆**：混淆会引入字符串数组查表和控制流间接，那是真正的性能损失。`npm run bench` 用「成对交替 + 中位数」测稳态每请求耗时：`fetch` 先打桩（留作保险——Worker 现在整站零外部请求，桩命中应为 0；早先 `/favicon.ico` 会去 `github.githubassets.com` 取图，不桩的话每请求测到的是 16 ms 网络往返，执行差异整个被淹掉），两个产物背靠背各跑一遍取比值，再对所有比值取中位数（串联测会把机器负载漂移算成两边的差别）。多轮实测中位比值在 0.97–1.09 之间摆动（−0.9%、+0.5%、+6.3% 都出现过，快慢两个方向都有），单组比值的四分位宽度还有 10%–30%，这一点中位差就是噪声。所以判据不是「中位差 <5%」一条，而是**中位差 >5% 且下四分位也 >1** 才算稳定回退——四分位横跨 1 就说明两边都赢过，方向不固定。压缩只用来减小体积——gzip 后 13.7 KB vs 27.8 KB，上传更快、解析更省，执行逻辑不动。
 
 ## 本地预览
 
@@ -62,9 +62,9 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 | 亮色 / 暗色 / 跟随系统 | `data-theme="auto"` 默认；`prefers-color-scheme` 负责跟随系统，`:root[data-theme=dark]` 负责显式选择 |
 | 不闪白 | 主题在 `<head>` 里同步落定（读 `localStorage('cfgh.theme')` 后立刻 `setAttribute`），不等 DOM 解析完 |
 | 不跑 JS 也不错乱 | 主题按钮的图标与文字由 CSS 按 `:root[data-theme]` 选择，JS 失效时仍显示正确状态 |
-| 体积 | 首页 20.4 KB，gzip 后 7.0 KB（`_worker.min.js` 整体 gzip 13.2 KB） |
-| 仓库入口 | 右上角一枚 GitHub 图标（`.gh`，40×40，与主题按钮同高、同描边），地址**写死**在 `src/pages.js` 的 `REPO_URL`，不做成环境变量；页面底部不放任何东西，所以全页外链只有这一个 |
-| 图标 | 顶栏 logo 与 favicon 是同一枚内联 SVG（`FAVICON_SVG`），`/favicon.ico` 由 Worker 直接返回 `image/svg+xml`，不发任何外部请求 |
+| 体积 | 首页 20.4 KB，gzip 后 7.0 KB（`_worker.min.js` 整体 gzip 13.7 KB） |
+| 仓库入口 | 右上角一枚 GitHub 图标（桌面端 40×40、640px 以下 36×36，与主题按钮同高、同描边），地址**写死**在 `src/pages.js` 的 `REPO_URL`，不做成环境变量；页面底部不放任何东西，所以全页外链只有这一个 |
+| 图标 | 顶栏 logo 与 favicon 由同一段几何生成：页面 favicon 走 `faviconHref()` 的 data URI，`/favicon.ico` 走 `FAVICON_SVG`，都不发外部请求 |
 | 背景 | 网格是两层 SVG `data:` 拼的（32px 细线 + 128px 主线），不用 CSS 渐变 |
 | 无障碍 | `:focus-visible` 统一轮廓、`#tip` 带 `role="status" aria-live="polite"`、`prefers-reduced-motion` 关动效 |
 | 响应式 | `clamp()` 字号与内边距；640px 以下输入栏改成上下两行、按钮通栏 |
@@ -81,7 +81,7 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 
 ### Range 与压缩：一个差点写坏文件的坑
 
-线上实测发现的真问题：同一份 37913 字节的 raw 文本，直连 `raw.githubusercontent.com` 回 `Content-Range: bytes 0-99/37913`，经 Worker 却回 `bytes 0-99/13173`——13173 是**压缩后表示**的长度，正文是 br 流的前 100 字节。断点续传会把这些碎片拼进文件，得到一份 sha256 对不上的坏文件。
+线上实测发现的真问题（当时那一版是 37913 字节的 raw 文本）：直连 `raw.githubusercontent.com` 回 `Content-Range: bytes 0-99/37913`，经 Worker 却回 `bytes 0-99/13173`——13173 是**压缩后表示**的长度，正文是 br 流的前 100 字节。断点续传会把这些碎片拼进文件，得到一份 sha256 对不上的坏文件。
 
 根因不在我们的代码：Cloudflare 的 subrequest 由平台决定压缩协商，上游于是按压缩表示切字节。Worker 侧既改不了协商（v1.2.3 显式发 `Accept-Encoding: identity`，线上实测仍协商 br），也看不到 `content-encoding`（被边缘抹掉）。
 
@@ -98,11 +98,11 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 
 `fetch` 外面套了一层 `try/catch`，任何未预期异常都会变成 **500 + 「内部错误：…」**，而不是 Cloudflare 的 1101 空白页（1101 只在日志里留线索，用户看到的是白屏）。`test/pages.test.js` 里用 `new Proxy({}, {get(){throw}})` 强制让配置解析抛异常来验证这条兜底，另外还覆盖了 `/%zz`、`/../../etc/passwd`、2000 个字符的路径、`%00` 等畸形输入，以及 HEAD/POST/PUT/DELETE/PATCH/OPTIONS 各方法——都不许抛。
 
-`/favicon.ico` 是零外部请求的最后一块拼图：图标由 `pages.js` 的 `FAVICON_SVG` 内联给出，Worker 直接回 `image/svg+xml`、缓存一天，一个字节都不去外站取。早先这里要去 GitHub 的静态资源取图，天然没有兜底——网络抖动就会抛成 500。图标丢了不算错误，绝不能因此把请求打成 500，这条教训仍然留在 `try/catch` 与 204 兜底里。
+`/favicon.ico` 是零外部请求的最后一块拼图：图标由 `pages.js` 的 `FAVICON_SVG` 内联给出，Worker 直接回 `image/svg+xml`、缓存一天，一个字节都不去外站取。早先这里要去 GitHub 的静态资源取图，天然没有兜底——网络抖动就会抛成 500。图标丢了不算错误，绝不能因此把请求打成 500；现在连失败面都没有了（本地常量，不依赖任何网络），这条原则仍由 `fetch` 外层的 `try/catch` 兜着。
 
 ### 构建产物是自动提交的
 
-`.github/workflows/build-worker.yml` 在 `src/`、`scripts/build.mjs`、`package.json`、`package-lock.json` 变更时触发：
+`.github/workflows/build-worker.yml` 在 `src/`、`scripts/build.mjs`、`package.json`、`package-lock.json` 以及它自己变更时触发：
 
 1. 装依赖 → 语法与行尾检查 → 构建 → 产物形态检查（两个产物各查一遍：无 import、无 sourcemap、有 export、有归属声明）→ 与源码行为比对
 2. 额外断言**压缩版必须真的比源码版小**，否则说明 `--min` 没生效
@@ -137,11 +137,19 @@ scripts/
   check-build.mjs         # 验证两个产物与源码行为一致（40 项）
   check-workflow.cjs      # 校验工作流配置本身（40 项）
   check-disguise.mjs      # 伪装页三变量组合（12 项）
-  live-check.mjs          # 真机联调（需联网，32 项）
+  live-check.mjs          # 真机联调（需联网，31 项）
   bench.mjs               # 两个产物的性能基准
   preview.mjs             # 本地预览（把 Node 请求交给真实 worker.fetch）
 .github/workflows/
   build-worker.yml        # src 变更时自动构建并回填两个产物
+README.md                 # 项目说明：部署入口、用法、配置表
+docs/                     # 详细文档：部署、支持路径、工作原理、开发、血统
+LICENSE                   # MIT
+package.json              # npm 脚本 + Dashboard 里的变量说明
+package-lock.json         # CI 用 npm ci，锁死依赖树
+.dev.vars.example         # 本地开发的环境变量样例（复制成 .dev.vars）
+.gitignore
+.taste-skill/             # 首页视觉方向的记录（git 只跟踪 notes.md 与 direction.json）
 wrangler.toml
 .gitattributes            # 强制 LF（Windows autocrlf 会污染，CI 有断言）
 ```

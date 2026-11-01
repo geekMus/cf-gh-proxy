@@ -11,7 +11,7 @@
 | 源码打包 | `github.com/o/r/archive/refs/heads/main.zip`、`github.com/o/r/archive/v1.0.0.tar.gz` |
 | 分支/提交里的文件 | `github.com/o/r/raw/main/x.sh`、`github.com/o/r/blob/main/x.sh` |
 | raw 直链 | `raw.githubusercontent.com/o/r/main/x.sh` |
-| Gist | `gist.githubusercontent.com/user/id/raw/x.txt` |
+| Gist | `gist.githubusercontent.com/user/id/raw/x.txt`；`gist.github.com/user/id/raw`（**不带 `/raw` 的 gist 网页会被拒**） |
 | API | `api.github.com/...` |
 
 其中 `/blob/` 是 GitHub 的**网页**（返回渲染好的 HTML，不是文件字节），Worker 会自动改写成 `raw.githubusercontent.com` 再取，所以 `blob` 链接也能拿到原始文本。

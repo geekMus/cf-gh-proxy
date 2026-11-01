@@ -42,12 +42,12 @@ release-assets.githubusercontent.com/github-production-release-asset/…
 | HEAD | 超时无输出 | **0.34 秒**，200 |
 | 响应头 | 带 `Set-Cookie: _gh_sess` | 无 cookie |
 
-（实测脚本：`node scripts/live-check.mjs`，41 项断言，三轮连跑全过。）
+（实测脚本：`node scripts/live-check.mjs`，31 项断言，三轮连跑全过。）
 
 ## 安全说明
 
 - **不转发 Cookie / Authorization**（`ALLOW_AUTH=0`）。这个 Worker 是公开服务，把访问者凭据送给上游既没必要也不安全。
-- **只放行 GitHub 域名**，其它一律 403。
+- **只放行 GitHub 域名**，其它一律 400（不是 403：这类请求不是「无权限」，而是「这里没有这个资源」）。
 - **上游响应的 `Set-Cookie` 一律剥掉**，不会落到访问者身上。
 - 上游响应里的 `Content-Security-Policy`、`X-Frame-Options` 等也剥掉——它们对「直接下文件」没有意义，反而会干扰浏览器处理。
 

@@ -272,3 +272,58 @@ test('Range + 弱 ETag（压缩表示，content-encoding 被边缘抹掉）同�
     globalThis.fetch = realFetch
   }
 })
+
+// ---------------------------------------------------------------------------
+// 首页与缓存 TTL 的边界
+// ---------------------------------------------------------------------------
+
+test('根路径只带查询串（/?cb=123）仍给首页，不当作资源路径', async () => {
+  const res = await worker.fetch(new Request('https://gh.test/?cb=123'), {}, { waitUntil() {} })
+  assert.equal(res.status, 200, '带缓存参数的首页不该变成 400')
+  assert.match(res.headers.get('content-type') || '', /text\/html/)
+})
+
+test('release 资产按最终地址判 TTL：跟到 release-assets 后是不可变缓存', async () => {
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async () => {
+    const r = new Response('BYTES', { status: 200, headers: { 'content-type': 'application/octet-stream' } })
+    // 只有真实 follow 之后才会有 res.url；桩里手动补上
+    Object.defineProperty(r, 'url', {
+      value: 'https://release-assets.githubusercontent.com/github-production-release-asset/1/x.zip',
+    })
+    return r
+  }
+  try {
+    const res = await worker.fetch(
+      new Request('https://gh.test/https://github.com/o/r/releases/download/v1/x.zip'),
+      {},
+      { waitUntil() {} }
+    )
+    assert.equal(res.status, 200)
+    assert.match(res.headers.get('cache-control') || '', /max-age=86400/, 'release 资产应是不可变缓存')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('releases/latest 不按不可变缓存：新版本不能迟一天才出现', async () => {
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async () => {
+    const r = new Response('BYTES', { status: 200, headers: { 'content-type': 'application/octet-stream' } })
+    Object.defineProperty(r, 'url', {
+      value: 'https://release-assets.githubusercontent.com/github-production-release-asset/1/x.zip',
+    })
+    return r
+  }
+  try {
+    const res = await worker.fetch(
+      new Request('https://gh.test/https://github.com/o/r/releases/latest/download/x.zip'),
+      {},
+      { waitUntil() {} }
+    )
+    assert.equal(res.status, 200)
+    assert.match(res.headers.get('cache-control') || '', /max-age=300/, 'latest 必须走短缓存')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})

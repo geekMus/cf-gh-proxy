@@ -48,11 +48,24 @@ export async function fetchFollowingRedirects(href, init, timeoutMs, maxRedirect
         /* 忽略：某些实现不支持 cancel */
       }
       current = new URL(loc, current).href
-      // GitHub 的 302 之后一律是 GET（HEAD 保持 HEAD）
-      currentInit = {
-        method: currentInit.method === 'HEAD' ? 'HEAD' : 'GET',
-        headers: currentInit.headers,
-        redirect: 'manual',
+      const method = currentInit.method || 'GET'
+      if (status === 307 || status === 308) {
+        // 307/308 要求原样重放方法 + 请求体；请求体是流，重放不了。
+        // GET/HEAD 没有体，照原样再发一次；带体的请求把这一跳交回客户端，别假装跟到底。
+        if (method !== 'GET' && method !== 'HEAD') return res
+        currentInit = { ...currentInit, redirect: 'manual' }
+      } else {
+        // 301/302/303：浏览器与 curl 都会把方法降级成 GET，并丢掉体的相关头。
+        // 不清理的话，GET 请求会带着上一跳的 Content-Length/Content-Type 发出去（上游可能直接 400）。
+        const headers = new Headers(currentInit.headers || {})
+        for (const name of ['content-length', 'content-type', 'content-encoding', 'transfer-encoding']) {
+          headers.delete(name)
+        }
+        currentInit = {
+          method: method === 'HEAD' ? 'HEAD' : 'GET',
+          headers,
+          redirect: 'manual',
+        }
       }
       continue
     }

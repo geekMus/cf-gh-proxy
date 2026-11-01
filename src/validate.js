@@ -198,8 +198,14 @@ export function validateGistPath(u) {
   if (!/^[0-9a-f]{20,}$/i.test(id) && !NAME_RE.test(id)) {
     return { ok: false, reason: `gist id 不合法：${id}` }
   }
-  // gist 的 raw 前缀是可选的（/user/id 本身也能拿到），但有 raw 更明确
-  if (segs[2] && segs[2] !== 'raw') {
+  // gist 的 raw 前缀：gist.githubusercontent.com 可以省略（/user/id 本身就返回原文），
+  // 但 gist.github.com 是**网页**——`/user/id` 是带页头页脚的 HTML，必须要求 /raw。
+  // 不区分的话「只代理文件、不代理网页」这条承诺就在这一个主机上破了。
+  if (u.hostname === 'gist.github.com') {
+    if (segs[2] !== 'raw') {
+      return { ok: false, reason: 'gist.github.com 是网页；文件要用 /raw/ 路径（或换 gist.githubusercontent.com）' }
+    }
+  } else if (segs[2] && segs[2] !== 'raw') {
     return { ok: false, reason: `gist 只支持 /raw/ 路径，收到：${segs[2]}` }
   }
   return { ok: true, kind: 'gist' }

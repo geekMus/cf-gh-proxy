@@ -1,6 +1,6 @@
 {
   "name": "cf-gh-proxy",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "private": true,
   "type": "module",
   "description": "GitHub 文件加速 Cloudflare Worker：把 release / archive / raw 链接走 Cloudflare 边缘",
@@ -45,7 +45,7 @@
         "description": "带版本号或 commit SHA 的路径（内容不会变）的缓存秒数，默认 `86400`。"
       },
       "UPSTREAM_TIMEOUT": {
-        "description": "单次回源超时毫秒数，默认 `30000`。超时不会卡住请求，会返回 504。"
+        "description": "单次回源超时毫秒数，默认 `30000`。超时不会卡住请求，会返回 502（上游没能在时限内应答）。"
       },
       "MAX_REDIRECTS": {
         "description": "最多跟随几次上游跳转，默认 `5`。GitHub 的 `releases/latest` 要跳两跳，不要设成 1。"

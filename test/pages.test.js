@@ -251,7 +251,8 @@ test('兜底：未预料到的异常变成可读 500，而不是 1101 空白页'
   assert.equal(res.status, 500, '异常应被兜底成 500')
   const text = await res.text()
   assert.match(text, /内部错误/)
-  assert.match(text, /模拟内部异常/)
+  // 具体异常只写日志，不回显给客户端（免得把内部地址/细节漏出去）
+  assert.doesNotMatch(text, /模拟内部异常/)
 })
 
 test('兜底：各种畸形请求都不会抛（抛了就是 1101）', async () => {

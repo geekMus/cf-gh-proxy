@@ -109,6 +109,14 @@ export function checkTarget(u) {
   if (!ALLOWED_HOSTS.has(host)) {
     return { ok: false, reason: `不在允许的域名列表里：${host}` }
   }
+  // 白名单锁死默认端口：`github.com:8443` 虽然还是 GitHub，但不该借我们的域名
+  // 去连非常规端口；带 userinfo（`https://user@github.com/...`）也一并拒绝。
+  if (u.port && u.port !== '443') {
+    return { ok: false, reason: `不允许的端口：${u.port}` }
+  }
+  if (u.username || u.password) {
+    return { ok: false, reason: 'URL 里不允许带用户名或密码' }
+  }
   // 那些「只接受完整 URL」的主机，路径不能为空
   if (HOSTS_REQUIRING_FULL_URL.has(host) && !u.pathname.replace(/^\/+/, '')) {
     return { ok: false, reason: '路径为空' }
@@ -146,10 +154,16 @@ export function maybeJsdelivrUrl(target, cfg) {
     return null
   }
 
-  // 只有「按 tag 或 commit SHA」才安全；分支名会吃到过期缓存
-  if (!/^v?\d/.test(ref) && !/^[0-9a-f]{7,40}$/i.test(ref)) return null
+  // 只有「按 tag 或 commit SHA」才安全；分支名会吃到过期缓存。
+  // tag 只认 semver 形态（`v1.2.3` / `1.2.3`，可带预发布后缀）：`1.x`、`2024-fix`
+  // 这类数字开头的**分支名**必须排除，否则 JSDELIVR=1 时会被当成不可变版本。
+  const isSemverTag = /^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(ref)
+  if (!isSemverTag && !/^[0-9a-f]{7,40}$/i.test(ref)) return null
 
-  return new URL(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${rest}`)
+  const out = new URL(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${rest}`)
+  // 保留原始查询串（`?raw`、`?token=` 之类，交给 jsDelivr 判定）
+  out.search = target.search
+  return out
 }
 
 /**
@@ -232,6 +246,10 @@ export function sanitizeUpstreamHeaders(upstream) {
     if (DROP_RESPONSE_HEADERS.has(key)) continue
     out.set(k, v)
   }
+  // 删了 `content-encoding` 就不能再留上游的 `content-length`：那是压缩后的长度，
+  // 而 Worker 交出去的是运行时解码后的字节。留着它，客户端会按错误长度读（读到一半
+  // 卡住，或截断）。交给运行时按实际 body 重算即可。
+  if (upstream.has('content-encoding')) out.delete('content-length')
   return out
 }
 
@@ -247,11 +265,18 @@ export function sanitizeUpstreamHeaders(upstream) {
  * @param {number} ttl 秒
  * @param {Headers} upstream 原始上游响应头（用来判断是否可缓存）
  */
-export function withCacheHeaders(headers, ttl, upstream) {
-  // 上游明确禁止缓存时尊重它
+export function withCacheHeaders(headers, ttl, upstream, opts = {}) {
+  // 上游明确禁止缓存时尊重它；`no-cache` / `max-age=0` 同样意味着「别存」。
   const cc = (upstream.get('cache-control') || '').toLowerCase()
-  if (cc.includes('no-store') || cc.includes('private')) {
+  if (
+    opts.noStore ||
+    cc.includes('no-store') ||
+    cc.includes('private') ||
+    cc.includes('no-cache') ||
+    /\bmax-age\s*=\s*0\b/.test(cc)
+  ) {
     headers.set('Cache-Control', 'no-store')
+    headers.delete('CDN-Cache-Control')
     return headers
   }
   headers.set('Cache-Control', `public, max-age=${ttl}`)

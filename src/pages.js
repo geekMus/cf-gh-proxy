@@ -65,7 +65,7 @@ body{
   min-height:100svh;
   background:var(--bg);
   color:var(--ink);
-  font:400 17px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;
+  font:400 16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
@@ -184,7 +184,7 @@ h1{
 #go[disabled]{opacity:.62;cursor:progress}
 .ui-tip{
   min-height:20px;margin:10px 2px 0;
-  font-size:14px;line-height:1.45;color:var(--danger);
+  font-size:13px;line-height:1.45;color:var(--danger);
   opacity:0;transition:opacity .2s ease;
 }
 .ui-tip.show{opacity:1}
@@ -372,6 +372,7 @@ function renderPathTable() {
       <div class="item"><span class="k">/owner/repo/blob/ref/path</span><span class="v">自动转 raw</span></div>
       <div class="item"><span class="k">raw.githubusercontent.com/owner/repo/ref/path</span><span class="v">raw 直链</span></div>
       <div class="item"><span class="k">gist.githubusercontent.com/user/id/raw</span><span class="v">Gist</span></div>
+      <div class="item"><span class="k">api.github.com/repos/owner/repo/...</span><span class="v">GitHub API</span></div>
     </div>
     <p class="paths-foot">仓库首页、issues、settings、search 这类网页会被明确拒绝，不会把 HTML 当文件抓回来。</p>`
 }
@@ -561,8 +562,8 @@ ${THEME_CYCLE}
 /**
  * 链接不合法时的说明页。
  *
- * 为什么不直接返回 403 纯文本：首页那个输入框会把任意输入拼成 URL，
- * 用户很容易粘错；给一页说明「错在哪、正确形态是什么」比一句 403 有用得多。
+ * 为什么不直接返回一行纯文本：首页那个输入框会把任意输入拼成 URL，
+ * 用户很容易粘错；给一页说明「错在哪、正确形态是什么」比一句 400 有用得多。
  *
  * @param {ReturnType<import('./config.js').resolveConfig>} cfg
  * @param {string} reason 具体原因（由 validate.js 产出）

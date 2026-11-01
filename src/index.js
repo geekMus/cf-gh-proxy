@@ -52,9 +52,12 @@ export default {
     try {
       return await route(request, env, ctx)
     } catch (err) {
-      const msg = err && err.message ? err.message : String(err)
+      // 对外只说「内部错误」，具体异常只写日志。
+      // 原样回显 err.message 会把内部 URL、上游地址、解析细节漏给客户端，
+      // 而这些信息对使用者没有帮助（他要的是一个可读的 500，不是堆栈）。
+      console.error('cf-gh-proxy 未捕获异常：', err && err.stack ? err.stack : err)
       try {
-        return textResponse(`内部错误：${msg}`, 500)
+        return textResponse('内部错误：请求处理失败，详情见 Worker 日志', 500)
       } catch {
         // 连 textResponse 都失败（极罕见）时，给一个绝对最小化的响应
         return new Response('Internal Error', { status: 500 })
@@ -81,7 +84,10 @@ async function route(request, env, ctx) {
   }
 
   // ---- 2. CORS 预检 ------------------------------------------------------
-  if (request.method === 'OPTIONS' && request.headers.has('access-control-request-headers')) {
+  // 任何 OPTIONS 都当预检处理：浏览器对 PUT/PATCH/DELETE 发预检时，
+  // 只有带自定义头才会带 `access-control-request-headers`；没有这个头时
+  // 若把请求当普通 OPTIONS 转给上游，返回里就缺 allow-methods，预检会失败。
+  if (request.method === 'OPTIONS') {
     return new Response(null, PREFLIGHT)
   }
 
@@ -214,13 +220,14 @@ function stripPrefix(url, prefix) {
     rest = url.pathname.slice(1) + url.search
   } else {
     const bare = prefix.replace(/\/$/, '')
-    if (!url.pathname.startsWith(bare)) return null
+    if (url.pathname !== bare && !url.pathname.startsWith(bare + '/')) return null
     rest = url.pathname.slice(bare.length)
     // `/gh` 本身（后面没东西）也当首页
     if (!rest || rest === '/') return null
     rest = rest.replace(/^\//, '') + url.search
   }
-  if (!rest) return null
+  // 只有查询串（`/?cb=123`）：这是访问首页时带的缓存参数，不是资源路径
+  if (!rest || rest.startsWith('?')) return null
   return rest
 }
 
@@ -296,7 +303,8 @@ async function handleProxy(request, target, cfg, ctx) {
     // 关键：由 Worker 自己把整条重定向链跟完，只回最终响应。
     res = await fetchFollowingRedirects(target.href, init, cfg.upstreamTimeout, cfg.maxRedirects)
   } catch (err) {
-    return textResponse(`上游请求失败：${err && err.message ? err.message : err}`, 502)
+    console.error('上游请求失败：', err)
+    return textResponse('上游请求失败', 502)
   }
 
   if (!res) {
@@ -305,7 +313,7 @@ async function handleProxy(request, target, cfg, ctx) {
 
   // Range 落在「压缩后的表示」上时，206 是不可用的：上游按 br/gzip 的字节切，
   // 回来的 content-range 总数是压缩长度，正文是压缩流碎片——客户端续传拼出来
-  // 的文件是坏的（实测 37912 字节的文本报成 13167 字节的「总数」）。
+  // 的文件是坏的（实测 37913 字节的文本报成 13173 字节的「总数」）。
   //
   // 怎么判断「这是压缩表示」：Cloudflare 会把 subrequest 的 `content-encoding`
   // 头抹掉（v1.2.3/v1.2.4 实测都拿不到），但它会保留弱 ETag —— `W/` 前缀正是
@@ -315,15 +323,25 @@ async function handleProxy(request, target, cfg, ctx) {
   // 判成压缩表示后别给 206：丢掉 Range 重取全量回 200，让客户端从头下——
   // 慢一点，但拿到的一定是原始字节，不会写坏文件。
   const compressedEtag = /^W\//i.test(res.headers.get('etag') || '')
-  if (range && (res.headers.has('content-encoding') || compressedEtag)) {
-    res.body?.cancel()
+  // 只在「上游确实按 Range 返回了 206」且请求体没被消费过时才重取：
+  //   - 上游忽略 Range、直接回 200/416 时，重取等于白下一遍整包（大文件尤其致命）；
+  //   - POST/PUT 带 Range 时 `init.body` 已经被这次 fetch 消费掉，第二次 fetch
+  //     会抛「body object should not be disturbed or locked」，只能放弃重取。
+  const canRetry = res.status === 206 && !init.body
+  if (range && canRetry && (res.headers.has('content-encoding') || compressedEtag)) {
+    try {
+      await res.body?.cancel()
+    } catch {
+      /* 取消失败不影响后续重取 */
+    }
     const fullHeaders = new Headers(upstreamHeaders)
     fullHeaders.delete('Range')
     const retry = { ...init, headers: fullHeaders }
     try {
       res = await fetchFollowingRedirects(target.href, retry, cfg.upstreamTimeout, cfg.maxRedirects)
     } catch (err) {
-      return textResponse(`上游请求失败：${err && err.message ? err.message : err}`, 502)
+      console.error('range 重取失败：', err)
+      return textResponse('上游请求失败', 502)
     }
     if (!res) {
       return textResponse('上游重定向次数过多', 508)
@@ -336,23 +354,54 @@ async function handleProxy(request, target, cfg, ctx) {
   outHeaders.set('access-control-expose-headers', '*')
 
   // ---- 边缘缓存 -----------------------------------------------------------
-  // 只有 200 / 206 这类「带完整资源」的状态才加缓存头；3xx/4xx/5xx 原样返回。
-  const cacheable = res.status === 200 || res.status === 206
-  if (cacheable && method === 'GET') {
-    withCacheHeaders(outHeaders, pickCacheTtl(target, cfg), res.headers)
+  // 200 才加公共缓存头：完整资源按 URL 缓存是安全的。
+  //
+  // 206 不加：它是「某个 Range 的片段」，而缓存键里没有 Range。一旦边缘把片段
+  // 当成这个 URL 的表示，后续整文件请求可能拿到半个文件。给 no-store 是明确的
+  // 「别缓存」。断点续传因此少一层边缘命中，换的是不会拿错字节。
+  //
+  // ALLOW_AUTH=1 时响应可能因人而异，同样一律私有：共享缓存不能把 A 的授权
+  // 内容发给 B。
+  if (res.status === 200 && method === 'GET') {
+    const personalized = cfg.allowAuth && (request.headers.has('authorization') || request.headers.has('cookie'))
+    const ttl = pickCacheTtl(target, cfg, res.url)
+    withCacheHeaders(outHeaders, ttl, res.headers, { noStore: personalized })
+  } else if (res.status === 206) {
+    outHeaders.set('cache-control', 'no-store')
+    outHeaders.set('vary', 'Range')
+    outHeaders.delete('cdn-cache-control')
   }
 
   return new Response(res.body, { status: res.status, headers: outHeaders })
 }
 
-/** 可变资源用短缓存，不可变资源用长缓存。 */
-function pickCacheTtl(target, cfg) {
-  const path = target.pathname
+/**
+ * 可变资源用短缓存，不可变资源用长缓存。
+ *
+ * 判据看**最终响应**的地址：`github.com/.../releases/download/v1/x.zip` 会 302 到
+ * `release-assets.githubusercontent.com`，只看请求地址会把它当可变资源、白拿 300 秒。
+ * 唯一的例外是 `releases/latest/`：它指向「当前最新」，缓存一天会让新版本迟一天才出现。
+ *
+ * @param {URL} target 请求侧解析出来的目标地址
+ * @param {ReturnType<typeof resolveConfig>} cfg
+ * @param {string} [finalUrl] 跟随重定向之后的最终地址（res.url）
+ */
+function pickCacheTtl(target, cfg, finalUrl) {
+  if (/\/releases\/latest\//.test(target.pathname)) return cfg.cacheTtl
+  let url = target
+  if (finalUrl) {
+    try {
+      url = new URL(finalUrl)
+    } catch {
+      /* 非法 url 就退回请求侧地址 */
+    }
+  }
+  const path = url.pathname
   // release 资产走 release-assets 域名，天然不可变
-  if (target.hostname === 'release-assets.githubusercontent.com') return cfg.immutableCacheTtl
-  if (target.hostname === 'objects.githubusercontent.com') return cfg.immutableCacheTtl
+  if (url.hostname === 'release-assets.githubusercontent.com') return cfg.immutableCacheTtl
+  if (url.hostname === 'objects.githubusercontent.com') return cfg.immutableCacheTtl
   // raw 用 40 位 commit SHA 时不可变；用分支名时可变的
-  if (target.hostname === 'raw.githubusercontent.com') {
+  if (url.hostname === 'raw.githubusercontent.com') {
     const seg = path.split('/').filter(Boolean)
     // /owner/repo/<ref>/<file...>
     const ref = seg[2] || ''
@@ -360,7 +409,7 @@ function pickCacheTtl(target, cfg) {
     return cfg.cacheTtl
   }
   // codeload 打包：按分支名会变，按 SHA 不变
-  if (target.hostname === 'codeload.github.com') {
+  if (url.hostname === 'codeload.github.com') {
     if (/\/zip\/[0-9a-f]{40}$/i.test(path) || /\/tar\.gz\/[0-9a-f]{40}$/i.test(path)) {
       return cfg.immutableCacheTtl
     }

@@ -71,6 +71,26 @@ export function resolveConfig(env) {
     // 这个页面属于本项目，别人 fork 了要改，改源码里那一行即可。
     // 主页伪装（沿用上游语义）
     disguiseNginx: Boolean(urlIsNginx),
-    homeRedirect: url302 || (urlRaw && !urlIsNginx ? urlRaw : ''),
+    homeRedirect: absoluteHttp(url302) || (urlRaw && !urlIsNginx ? absoluteHttp(urlRaw) : ''),
+  }
+}
+
+/**
+ * 伪装变量只接受完整的 http(s) 地址。
+ *
+ * 少了 scheme（`URL=example.com` 是最常见的误配）时 `Response.redirect` 会抛
+ * 「Failed to parse URL」，于是每次访问首页都变成 500。这里提前判掉：非法值
+ * 当作没配，回退到说明页——宁可露出自己的页面，也不要一个打不开的首页。
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+function absoluteHttp(raw) {
+  if (!raw) return ''
+  try {
+    const u = new URL(raw)
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : ''
+  } catch {
+    return ''
   }
 }

@@ -29,7 +29,7 @@ async function home(env) {
 }
 
 const cases = [
-  ['都不设 → 说明页', {}, 200, 'text/html', 'releases/download'],
+  ['都不设 → 说明页', {}, 200, 'text/html', 'GitHub 文件加速'],
   ['URL302 → 302 跳转', { URL302: 'https://t.me/x' }, 302, null, null],
   ['URL=nginx → nginx 页', { URL: 'nginx' }, 200, 'text/html', 'Welcome to nginx'],
   ['URL=普通地址 → 302', { URL: 'https://www.baidu.com/' }, 302, null, null],

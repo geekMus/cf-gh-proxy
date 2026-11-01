@@ -106,12 +106,12 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------
-  console.log('\n[5] 安全：非 GitHub 域名必须 403')
+  console.log('\n[5] 安全：非 GitHub 域名必须 400')
   {
     const { res } = await callWorker('/https://example.com/')
-    ok('example.com → 403', res.status === 403, `实际 ${res.status}`)
+    ok('example.com → 400', res.status === 400, `实际 ${res.status}`)
     const { res: r2 } = await callWorker('/https://evil.com/github.com/o/r')
-    ok('把 github.com 塞进路径也 → 403', r2.status === 403, `实际 ${r2.status}`)
+    ok('把 github.com 塞进路径也 → 400', r2.status === 400, `实际 ${r2.status}`)
   }
 
   // ---------------------------------------------------------------------
@@ -121,7 +121,7 @@ async function main() {
     const text = await res.text()
     ok('首页 200', res.status === 200, `实际 ${res.status}`)
     ok('首页是 html', (res.headers.get('content-type') || '').includes('text/html'))
-    ok('首页含用法示例', text.includes('releases/download'))
+    ok('首页含用法示例', text.includes('粘贴 GitHub 链接') || text.includes('GitHub 文件加速'))
 
     const { res: r2 } = await callWorker('/https://github.com/o/r/archive/refs/heads/main.zip', {
       headers: { 'User-Agent': 'netcraft-scanner/1.0' },
