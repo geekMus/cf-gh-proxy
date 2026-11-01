@@ -30,8 +30,9 @@ ALLOW_AUTH = "0"
 # 命中这些 UA 子串时返回 nginx 伪装页（逗号/空格分隔）
 BLOCKED_UA = "netcraft"
 
-# 首页底部展示的落地链接
-LANDING_LINK = "https://github.com/"
+# 说明页右上角仓库图标指向的链接。**部署自己的 fork 时改成你自己的仓库地址。**
+# 留空/不设时退回代码里的默认值（也就是本仓库）。
+LANDING_LINK = "https://github.com/geekMus/cf-gh-proxy"
 
 # —— 主页伪装（与上游 cmliu/CF-Workers-GitHub 的语义完全一致）——
 # URL302 = "https://t.me/xxx"   # 主页 302 跳转到这里（优先级最高）
