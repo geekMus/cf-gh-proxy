@@ -91,12 +91,15 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 |---|---|
 | 带 `Range`，且上游回 `content-encoding`，或 ETag 是弱标记 `W/` | 认定 206 落在压缩表示上：`res.body.cancel()`，删掉 `Range` 重取全量，回 **200 + 整个文件** |
 | 带 `Range`，上游是原始字节（zip/exe 这类，强 ETag） | 原样透传 **206**，`Content-Range` / `Content-Length` 都对 |
+| 上游没按 `Range` 回 206（忽略 `Range` 直接 200，或 416），或请求本身就带 body | 不做重取——前者重取等于白下一遍整包，后者 body 是流、第二次 fetch 用不了 |
+
+**206 不进公共缓存**：缓存键里没有 `Range`，一副片段不能被当成整个文件的表示。所以 206 一律 `cache-control: no-store` + `vary: Range`，并且不写 `cdn-cache-control`；只有完整的 200 才按 `pickCacheTtl()` 加 TTL（`ALLOW_AUTH=1` 且请求带 `Authorization`/`Cookie` 时也回 `no-store`，共享缓存不能把 A 的授权内容发给 B）。
 
 代价说清楚：**文本文件的断点续传被主动放弃了**——`-r 200-999` 会拿到整个文件（多下几 KB，但字节一定对），二进制资产照旧 206。宁可多传，也不交回一份拼得起来的坏文件。线上验证：raw 文本 `-r 0-99` → 200 + 全文；electron 的 115 MB zip `-r 5000000-` → 206。
 
 ### 为什么不会轻易出现 1101
 
-`fetch` 外面套了一层 `try/catch`，任何未预期异常都会变成 **500 + 「内部错误：…」**，而不是 Cloudflare 的 1101 空白页（1101 只在日志里留线索，用户看到的是白屏）。`test/pages.test.js` 里用 `new Proxy({}, {get(){throw}})` 强制让配置解析抛异常来验证这条兜底，另外还覆盖了 `/%zz`、`/../../etc/passwd`、2000 个字符的路径、`%00` 等畸形输入，以及 HEAD/POST/PUT/DELETE/PATCH/OPTIONS 各方法——都不许抛。
+`fetch` 外面套了一层 `try/catch`，任何未预期异常都会变成 **500 + 「内部错误：请求处理失败，详情见 Worker 日志」**，而不是 Cloudflare 的 1101 空白页（1101 只在日志里留线索，用户看到的是白屏）。异常细节只写 `console.error`，不回显给客户端——原样回显 `err.message` 会把内部 URL 和解析细节漏出去，而那些对使用者没有帮助。`test/pages.test.js` 里用 `new Proxy({}, {get(){throw}})` 强制让配置解析抛异常来验证这条兜底，另外还覆盖了 `/%zz`、`/../../etc/passwd`、2000 个字符的路径、`%00` 等畸形输入，以及 HEAD/POST/PUT/DELETE/PATCH/OPTIONS 各方法——都不许抛。
 
 `/favicon.ico` 是零外部请求的最后一块拼图：图标由 `pages.js` 的 `FAVICON_SVG` 内联给出，Worker 直接回 `image/svg+xml`、缓存一天，一个字节都不去外站取。早先这里要去 GitHub 的静态资源取图，天然没有兜底——网络抖动就会抛成 500。图标丢了不算错误，绝不能因此把请求打成 500；现在连失败面都没有了（本地常量，不依赖任何网络），这条原则仍由 `fetch` 外层的 `try/catch` 兜着。
 
