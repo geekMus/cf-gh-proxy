@@ -243,3 +243,32 @@ test('Range 打到压缩表示上：不给 206，丢掉 Range 重取全量', asy
     globalThis.fetch = realFetch
   }
 })
+
+test('Range + 弱 ETag（压缩表示，content-encoding 被边缘抹掉）同样重取全量', async () => {
+  let n = 0
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (input, init) => {
+    const h = new Headers(init && init.headers)
+    n++
+    if (h.has('range')) {
+      return new Response('sliced', {
+        status: 206,
+        headers: { 'content-type': 'text/plain', 'etag': 'W/"abc"', 'content-range': 'bytes 0-5/9' },
+      })
+    }
+    return new Response('whole', { status: 200, headers: { 'content-type': 'text/plain', 'etag': '"abc"' } })
+  }
+  try {
+    const res = await worker.fetch(
+      new Request('https://gh.test/https://raw.githubusercontent.com/o/r/main/x.js', { headers: { Range: 'bytes=0-5' } }),
+      {},
+      { waitUntil() {} }
+    )
+    assert.equal(res.status, 200)
+    assert.equal(await res.text(), 'whole')
+    assert.equal(res.headers.has('content-range'), false)
+    assert.equal(n, 2)
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})

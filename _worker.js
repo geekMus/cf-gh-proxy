@@ -1683,11 +1683,15 @@ async function handleProxy(request, target, cfg, ctx) {
   // 回来的 content-range 总数是压缩长度，正文是压缩流碎片——客户端续传拼出来
   // 的文件是坏的（实测 37912 字节的文本报成 13167 字节的「总数」）。
   //
-  // Cloudflare 的边缘 fetch 由平台决定压缩协商，Worker 里设 accept-encoding
-  // 改不了它（v1.2.3 试过，线上仍协商 br）。所以只能在这层兜底：发现上游这次
-  // 是压缩表示，就别给 206 了，丢掉 Range 重取全量回 200，让客户端从头下——
-  // 慢一点，但拿到的一定是原始字节。二进制资产（zip/exe）不会被压缩，这条不触发。
-  if (range && res.headers.has('content-encoding')) {
+  // 怎么判断「这是压缩表示」：Cloudflare 会把 subrequest 的 `content-encoding`
+  // 头抹掉（v1.2.3/v1.2.4 实测都拿不到），但它会保留弱 ETag —— `W/` 前缀正是
+  // RFC 7232 里「语义相同、字节不同」的标记，压缩就是这种情况。所以两路信号
+  // 任一命中就认压缩。二进制资产不会被压缩，走不到这里。
+  //
+  // 判成压缩表示后别给 206：丢掉 Range 重取全量回 200，让客户端从头下——
+  // 慢一点，但拿到的一定是原始字节，不会写坏文件。
+  const compressedEtag = /^W\//i.test(res.headers.get('etag') || '')
+  if (range && (res.headers.has('content-encoding') || compressedEtag)) {
     res.body?.cancel()
     const fullHeaders = new Headers(upstreamHeaders)
     fullHeaders.delete('Range')
