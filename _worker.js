@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.0 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.1 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -810,6 +810,16 @@ body::before{
   transition:color .18s ease,box-shadow .18s ease;
 }
 #theme:hover{color:var(--ink);box-shadow:inset 0 0 0 1px var(--muted)}
+/* 仓库入口：右上角一个 GitHub 图标，点进本仓库；页面底部不再放任何东西 */
+.gh{
+  flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+  width:40px;height:40px;
+  color:var(--muted);text-decoration:none;
+  box-shadow:inset 0 0 0 1px var(--surface-2);
+  transition:color .18s ease,box-shadow .18s ease;
+}
+.gh svg{width:17px;height:17px;display:block;fill:currentColor}
+.gh:hover{color:var(--ink);box-shadow:inset 0 0 0 1px var(--muted)}
 .ti{display:none;line-height:0}
 .tl{display:none}
 :root[data-theme=auto] .ti-auto,:root[data-theme=auto] .tl-auto{display:inline-flex}
@@ -912,16 +922,7 @@ h1{
 #copy:hover{color:var(--accent)}
 #copy[data-done]{color:var(--ok)}
 
-/* ---- 页脚：仓库地址 + 许可证，就这两样 -------------------------------- */
-.foot{
-  flex:0 0 auto;
-  display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;
-  padding-top:clamp(12px,2.5vw,20px);
-  color:var(--muted);font-size:13px;
-}
-.foot a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--surface-2)}
-.foot a:hover{border-bottom-color:var(--accent)}
-.foot .dot{width:3px;height:3px;background:var(--surface-2)}
+/* ---- 页脚：已移除。仓库入口挪到右上角，页面底部只留空白 ---------------- */
 
 /* ---- 焦点可见与动效兜底 ------------------------------------------------ */
 a:focus-visible,button:focus-visible,input:focus-visible{
@@ -951,9 +952,9 @@ a:focus-visible,button:focus-visible,input:focus-visible{
   #q{height:48px;font-size:16px}   /* 16px 起 iOS 不会自动放大 */
   #go{flex:1 1 100%;height:48px;margin-top:6px}
   #theme{padding:0 8px}
+  .gh{width:36px;height:36px}
   .ex{gap:6px}
   .ex button{height:30px;font-size:13px;padding:0 10px}
-  .foot{font-size:13px;gap:8px}
 }
 
 /* ---- 错误页复用的小零件（首页不用） ------------------------------------ */
@@ -1052,25 +1053,18 @@ function faviconHref() {
 /** Worker 直接返回的 favicon（/favicon.ico 分支用，和页面里那份是同一张图）。 */
 export const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#2f6f9f"/><path d="M5 8.5h10v9h3" fill="none" stroke="#fff" stroke-width="4"/><path d="M18 11.6 27.6 17.5 18 23.4Z" fill="#fff"/></svg>`
 
-// 顶栏：标记 + 名字 + 主题按钮。两页共用。
-function renderTop() {
+// 顶栏：标记 + 名字 + 仓库图标 + 主题按钮。两页共用。
+// 仓库地址是页面上唯一的外链，也只出现在这一个入口上（底部不再重复）。
+const GITHUB_MARK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>'
+
+function renderTop(landingLink) {
   return `<header class="top">
   <span class="mark" aria-hidden="true">${logoMark()}</span>
   <span class="brand">GitHub 文件加速</span>
   <span class="top-sp"></span>
+  <a class="gh" href="${escapeHtml(landingLink)}" target="_blank" rel="noopener noreferrer" aria-label="打开项目仓库" title="项目仓库">${GITHUB_MARK}</a>
   <button id="theme" type="button" aria-label="切换主题（跟随系统 / 亮色 / 暗色）" title="切换主题">${THEME_ICONS}</button>
 </header>`
-}
-
-/** 页脚：仓库地址 + 许可证。仓库地址是页面上唯一的外链。 */
-function renderFoot(landingLink) {
-  const l = escapeHtml(landingLink)
-  const label = escapeHtml(landingLink.replace(/^https?:\/\//, '').replace(/\/$/, ''))
-  return `<footer class="foot">
-  <a href="${l}" target="_blank" rel="noopener noreferrer">${label}</a>
-  <span class="dot" aria-hidden="true"></span>
-  <span>MIT 许可证</span>
-</footer>`
 }
 
 /** 支持的路径表。错误页与首页共用，避免「首页说一套、错误页说另一套」。 */
@@ -1158,11 +1152,10 @@ function renderLanding(cfg) {
 </head>
 <body>
 <div class="shell">
-  ${renderTop()}
+  ${renderTop(cfg.landingLink)}
   <main class="stage">
     ${renderCore(prefix)}
   </main>
-  ${renderFoot(cfg.landingLink)}
 </div>
 <script>
 ${THEME_CYCLE}
@@ -1302,7 +1295,7 @@ function renderErrorPage(cfg, reason) {
 </head>
 <body>
 <div class="shell">
-  ${renderTop()}
+  ${renderTop(cfg.landingLink)}
 
   <div class="err-hero">
     <h1>这个地址不是一个文件</h1>
@@ -1332,7 +1325,6 @@ function renderErrorPage(cfg, reason) {
 
   <p><a class="back" href="${escapeHtml(home)}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8h-11M6.5 3.5 2 8l4.5 4.5"/></svg>回到首页重新输入</a></p>
 
-  ${renderFoot(cfg.landingLink)}
 </div>
 <script>${THEME_CYCLE}</script>
 </body>
