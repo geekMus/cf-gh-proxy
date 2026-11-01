@@ -17,8 +17,8 @@
 // ============================================================================
 
 import { resolveConfig } from './config.js'
-import { renderLanding, renderDisguise } from './pages.js'
-import { buildTargetUrl, isAllowedTarget, maybeJsdelivrUrl, sanitizeUpstreamHeaders, withCacheHeaders } from './proxy.js'
+import { renderLanding, renderDisguise, renderErrorPage } from './pages.js'
+import { buildTargetUrl, checkTarget, maybeJsdelivrUrl, sanitizeUpstreamHeaders, withCacheHeaders } from './proxy.js'
 import { fetchFollowingRedirects } from './upstream.js'
 
 const CORS_HEADERS = {
@@ -65,7 +65,11 @@ export default {
     if (q) {
       const target = buildTargetUrl(q)
       if (!target) {
-        return textResponse('无法解析这个链接', 400)
+        return badRequest(request, cfg, '无法解析这个链接')
+      }
+      const verdict = checkTarget(target)
+      if (!verdict.ok) {
+        return badRequest(request, cfg, verdict.reason || '这个链接不是可加速的 GitHub 文件')
       }
       // 用 302 而不是 301：301 会被浏览器永久缓存，之后换域名/换前缀就再也回不来。
       return Response.redirect(`${url.origin}${cfg.prefix}${target.href}`, 302)
@@ -88,13 +92,11 @@ export default {
     // ---- 6. 代理 -----------------------------------------------------------
     const target = buildTargetUrl(stripped)
     if (!target) {
-      return renderHome(cfg)
+      return badRequest(request, cfg, '无法解析这个链接')
     }
-    if (!isAllowedTarget(target)) {
-      return textResponse(
-        '只允许代理 GitHub 的资源（github.com / raw.githubusercontent.com / gist.githubusercontent.com / codeload.github.com / release-assets.githubusercontent.com / objects.githubusercontent.com）',
-        403,
-      )
+    const verdict = checkTarget(target)
+    if (!verdict.ok) {
+      return badRequest(request, cfg, verdict.reason || '这个链接不是可加速的 GitHub 文件')
     }
 
     // 可选：分支单文件改写走 jsDelivr（默认关闭，见 maybeJsdelivrUrl 注释）
@@ -154,6 +156,27 @@ function textResponse(body, status = 200) {
   return new Response(body + '\n', {
     status,
     headers: { 'content-type': 'text/plain; charset=UTF-8', ...CORS_HEADERS },
+  })
+}
+
+/**
+ * 链接不合法时的响应。
+ *
+ * 浏览器（Accept 含 text/html）给一页可读的说明，含返回首页的链接；
+ * 命令行（curl / wget）给纯文本，方便脚本 grep。
+ *
+ * @param {Request} request
+ * @param {ReturnType<typeof resolveConfig>} cfg
+ * @param {string} reason
+ */
+function badRequest(request, cfg, reason) {
+  const wantsHtml = (request.headers.get('Accept') || '').includes('text/html')
+  if (!wantsHtml) {
+    return textResponse(`不是可加速的 GitHub 文件：${reason}`, 400)
+  }
+  return new Response(renderErrorPage(cfg, reason), {
+    status: 400,
+    headers: { 'content-type': 'text/html; charset=UTF-8', ...CORS_HEADERS },
   })
 }
 

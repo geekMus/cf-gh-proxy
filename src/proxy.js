@@ -4,8 +4,10 @@
 // 目标 URL 构建 / 白名单 / 响应头清洗
 //
 // 路由判定与 URL 形态识别沿袭自 cmliu/CF-Workers-GitHub（MIT, CMLiussss），
-// 白名单、响应头清洗、缓存策略、jsDelivr 改写为新增。
+// 白名单、路径形态校验、响应头清洗、缓存策略、jsDelivr 改写为新增。
 // ============================================================================
+
+import { validateTargetPath } from './validate.js'
 
 /** 允许代理的上游主机。收紧到 GitHub 自家域名，避免变成通用开放代理。 */
 const ALLOWED_HOSTS = new Set([
@@ -83,15 +85,35 @@ export function buildTargetUrl(rest) {
 }
 
 /**
- * 目标是否在白名单内。
+ * 目标是否在白名单内**且**路径形态是「可下载资源」。
+ *
+ * 只查主机是不够的：`https://github.com/随便什么`、`https://github.com/login`
+ * 的主机都在白名单里，但它们不是文件。没有形态校验时 Worker 会把 GitHub
+ * 网页 HTML 抓回来，这个「加速站」就变成了通用反向代理。
+ *
  * @param {URL} u
+ * @returns {boolean}
  */
 export function isAllowedTarget(u) {
+  return checkTarget(u).ok
+}
+
+/**
+ * 同上，但返回详细判定结果（`{ ok, kind?, reason? }`），供调用方拼错误信息。
+ *
+ * @param {URL} u
+ * @returns {{ ok: boolean, kind?: string, reason?: string }}
+ */
+export function checkTarget(u) {
   const host = u.hostname.toLowerCase()
-  if (!ALLOWED_HOSTS.has(host)) return false
+  if (!ALLOWED_HOSTS.has(host)) {
+    return { ok: false, reason: `不在允许的域名列表里：${host}` }
+  }
   // 那些「只接受完整 URL」的主机，路径不能为空
-  if (HOSTS_REQUIRING_FULL_URL.has(host) && !u.pathname.replace(/^\/+/, '')) return false
-  return true
+  if (HOSTS_REQUIRING_FULL_URL.has(host) && !u.pathname.replace(/^\/+/, '')) {
+    return { ok: false, reason: '路径为空' }
+  }
+  return validateTargetPath(u)
 }
 
 /**

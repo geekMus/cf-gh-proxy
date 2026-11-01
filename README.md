@@ -47,12 +47,13 @@ jsproxy         ────┘         (MIT, CMLiussss)
 | 上游超时 | 无 | `UPSTREAM_TIMEOUT`，超时主动放弃 |
 | 跳转次数 | 递归跟随，无上限 | `MAX_REDIRECTS`，超限 508 |
 | 边缘缓存 | 无（全部回源） | 按资源可变性分级缓存 |
-| 域名白名单 | 空数组时全放行（开放代理，实测 `example.com` 返回 200） | 只放行 GitHub 域名，其它 403 |
+| 域名白名单 | 空数组时全放行（开放代理，实测 `example.com` 返回 200） | 只放行 GitHub 域名 |
+| 路径校验 | 只按正则判前缀，**任意输入都能触发代理**（`github.com/随便什么`、`/login`、`/settings` 全放行） | 域名 + 路径双重校验，只代理可下载文件，网页一律 400 |
 | 客户端凭据 | 原样转发 `Cookie` / `Authorization` | 默认不转发（`ALLOW_AUTH=0`） |
 | 模块级状态 | `屏蔽爬虫UA = 屏蔽爬虫UA.concat(...)`，每次请求追加、同 isolate 无限增长 | 每次请求重新解析，无模块级可变状态 |
 | 死代码 | `exp4` 分支永远到不了（前面已被吃掉），分支上的 jsDelivr 重定向失效 | `JSDELIVR` 是真正生效的配置 |
 | 响应头 | 原样透传（含 `Set-Cookie`、CSP、Cloudflare/Azure 内部头） | 剥掉不该透传的，保留 `content-type` / `content-range` / `etag` 等 |
-| 代码组织 | 单个 480 行 `worker.js`，含内嵌 HTML | `src/` 分 5 个模块 + `test/` 41 个测试 |
+| 代码组织 | 单个 480 行 `worker.js`，含内嵌 HTML | `src/` 分 6 个模块 + `test/` 62 个测试 |
 
 ### 许可证
 
@@ -72,6 +73,8 @@ Copyright (c) 2026 cf-gh-proxy contributors
 直连 `github.com` 在国内经常很慢甚至超时；现成的第三方加速站要么需要排队，要么像本文重写前那样把重定向直接丢给客户端，导致一次下载要请求两遍。
 
 这个 Worker 的做法是：**自己把 GitHub 的重定向链跟完，只把最终的文件字节回给客户端。** 一次请求，一跳到底。
+
+同时它**只代理可下载的文件**：`github.com/login`、`github.com/owner/repo`、`github.com/search` 这类网页路径会被拒绝并说明原因，不会变成谁都能用的通用反向代理。
 
 ---
 
@@ -242,10 +245,11 @@ curl -sI "https://gh.mus.pp.ua/https://github.com/geekMus/container-autoupdate/r
 | 形态 | 例子 |
 |---|---|
 | release 资产 | `github.com/o/r/releases/download/v1.0.0/app.zip` |
-| 源码打包 | `github.com/o/r/archive/refs/heads/main.zip` |
+| 最新 release | `github.com/o/r/releases/latest/download/app.zip` |
+| 源码打包 | `github.com/o/r/archive/refs/heads/main.zip`、`github.com/o/r/archive/v1.0.0.tar.gz` |
 | 分支/提交里的文件 | `github.com/o/r/raw/main/x.sh`、`github.com/o/r/blob/main/x.sh` |
 | raw 直链 | `raw.githubusercontent.com/o/r/main/x.sh` |
-| Gist | `gist.githubusercontent.com/...` |
+| Gist | `gist.githubusercontent.com/user/id/raw/x.txt` |
 | API | `api.github.com/...` |
 
 省略 `https://github.com/` 也能用：
@@ -254,14 +258,34 @@ curl -sI "https://gh.mus.pp.ua/https://github.com/geekMus/container-autoupdate/r
 https://gh.example.com/o/r/releases/download/v1.0.0/app.zip
 ```
 
-只代理 GitHub 自家域名，其它域名一律 403（避免变成公开的开放代理）。
+### 只代理文件，不代理网页
+
+这是本项目与「通用反向代理」的关键区别。**域名合法不代表路径合法**——`github.com/login` 的主机在白名单里，但它是一张网页。如果只查域名，Worker 就会把 GitHub 的 HTML 抓回来，这个服务也就退化成了开放代理。
+
+所以路径还要过一层形态校验，下面这些一律返回 **400** 并说明原因：
+
+| 会被拒的输入 | 为什么 |
+|---|---|
+| `随便什么`、`hello` | 不是 owner/repo 形态 |
+| `github.com/owner/repo` | 仓库首页，是网页 |
+| `github.com/owner/repo/tree/main` | 文件浏览页，是网页 |
+| `github.com/owner/repo/issues`、`/pulls`、`/actions`、`/wiki` | 都是网页 |
+| `github.com/login`、`/settings`、`/search`、`/explore`、`/topics` | GitHub 站内页面 |
+| `github.com/owner/repo/releases`、`/releases/tag/v1` | releases 的网页，不是资产 |
+| `github.com/owner/repo/archive/v1.0.0` | 缺 `.zip` / `.tar.gz` 扩展名 |
+| `github.com/owner/repo/raw/main` | 缺文件名 |
+| `example.com/...`、`evil.com/https://github.com/...` | 非 GitHub 域名 |
+
+错误响应分两种形态：浏览器（`Accept` 含 `text/html`）给一页可读的说明，含具体原因与正确示例；`curl` / `wget` 给一行纯文本，方便脚本 grep。
+
+只代理 GitHub 自家域名，其它域名一律拒绝（避免变成公开的开放代理）。
 
 ---
 
 ## 开发
 
 ```bash
-npm test                # 41 个单元测试，纯桩无网络
+npm test                # 62 个单元测试，纯桩无网络
 npm run check           # 语法检查
 npm run build           # 构建单文件 _worker.js
 npm run test:build      # 验证单文件与源码行为一致（16 项断言）
@@ -270,7 +294,7 @@ node scripts/live-check.mjs   # 真机联调（需联网，31 项断言）
 npx wrangler tail       # 看线上实时日志
 ```
 
-单元测试覆盖：配置解析、上游兼容变量、URL 构建（三种输入形态）、白名单、响应头清洗、缓存头、**重定向跟随（本次改造的核心）**、jsDelivr 改写。
+单元测试覆盖：配置解析、上游兼容变量、URL 构建（三种输入形态）、白名单、**路径形态校验（只代理文件、不代理网页）**、响应头清洗、缓存头、**重定向跟随（本次改造的核心）**、jsDelivr 改写。
 
 `npm run test:build` 做的事：同一组请求分别打到 `src/index.js` 和 `_worker.js`，逐项比对状态码、响应头、正文 sha256。构建产物和源码行为不一致时它会失败——这是「单文件分发」的安全网。
 
@@ -295,10 +319,12 @@ src/
   index.js              # Worker 入口：路由分发
   config.js             # env → cfg 归一化
   proxy.js              # 目标 URL 构建 / 白名单 / 响应头清洗 / 缓存头
+  validate.js           # 路径形态校验（只代理文件、不代理网页）
   upstream.js           # 上游请求：自己跟随重定向 + 超时
-  pages.js              # 说明页 / nginx 伪装页
+  pages.js              # 说明页 / 错误页 / nginx 伪装页
 test/
   unit.test.js             # 配置、URL、白名单、响应头
+  validate.test.js         # 路径形态校验（21 项，锁死「不代理网页」）
   redirect.test.js         # 重定向跟随（核心）
   jsdelivr.test.js         # jsDelivr 改写
   compat-upstream.test.js  # 上游 URL / URL302 兼容
