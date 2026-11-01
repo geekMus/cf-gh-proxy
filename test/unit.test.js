@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 
 import { resolveConfig } from '../src/config.js'
 import { buildTargetUrl, isAllowedTarget, sanitizeUpstreamHeaders, withCacheHeaders } from '../src/proxy.js'
+import worker from '../src/index.js'
 
 // ---------------------------------------------------------------------------
 // 配置解析
@@ -183,4 +184,32 @@ test('withCacheHeaders：尊重上游 no-store', () => {
   const out = withCacheHeaders(h, 300, up)
   assert.equal(out.get('cache-control'), 'no-store')
   assert.equal(out.has('cdn-cache-control'), false)
+})
+
+// ---------------------------------------------------------------------------
+// 转发的请求头
+// ---------------------------------------------------------------------------
+
+test('带 Range 的请求向上游要 identity，不带 Range 时不动 accept-encoding', async () => {
+  const seen = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (input, init) => {
+    seen.push(new Headers(init && init.headers))
+    return new Response('body', { status: 200, headers: { 'content-type': 'text/plain' } })
+  }
+  const url = 'https://gh.test/https://raw.githubusercontent.com/o/r/main/x.js'
+  try {
+    const ranged = await worker.fetch(new Request(url, { headers: { Range: 'bytes=0-99' } }), {}, { waitUntil() {} })
+    assert.equal(ranged.status, 200)
+    assert.equal(seen[0].get('range'), 'bytes=0-99')
+    // 关键：Range 与压缩不能同时要，否则上游按压缩表示切片
+    assert.equal(seen[0].get('accept-encoding'), 'identity')
+
+    const plain = await worker.fetch(new Request(url), {}, { waitUntil() {} })
+    assert.equal(plain.status, 200)
+    assert.equal(seen[1].get('range'), null)
+    assert.equal(seen[1].get('accept-encoding'), null)
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })

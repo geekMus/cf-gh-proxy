@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.2 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.3 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -1654,7 +1654,14 @@ async function handleProxy(request, target, cfg, ctx) {
 
   // Range 必须原样带上，否则「只取前 4KB 探测版本」的请求会退化成全量下载。
   const range = request.headers.get('Range')
-  if (range) upstreamHeaders.set('Range', range)
+  if (range) {
+    upstreamHeaders.set('Range', range)
+    // Range + 压缩 的组合是错的：Cloudflare 的 fetch 默认跟上游协商 br/gzip，
+    // 上游于是按「压缩后的表示」切字节，回来的 content-range 总数是压缩长度
+    // （实测 37913 字节的文件报成 13173），而我们拿到的是压缩流碎片，
+    // 客户端续传拼出来的文件就是坏的。带 Range 时显式要原始字节。
+    upstreamHeaders.set('Accept-Encoding', 'identity')
+  }
 
   const init = { method, headers: upstreamHeaders }
   if (!isHead && method !== 'GET' && request.body) {
