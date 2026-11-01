@@ -60,7 +60,7 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 | 亮色 / 暗色 / 跟随系统 | `data-theme="auto"` 默认；`prefers-color-scheme` 负责跟随系统，`:root[data-theme=dark]` 负责显式选择 |
 | 不闪白 | 主题在 `<head>` 里同步落定（读 `localStorage('cfgh.theme')` 后立刻 `setAttribute`），不等 DOM 解析完 |
 | 不跑 JS 也不错乱 | 主题按钮的图标与文字由 CSS 按 `:root[data-theme]` 选择，JS 失效时仍显示正确状态 |
-| 体积 | 首页 35.5 KB，gzip 后 11.2 KB（`_worker.min.js` 整体 gzip 17 KB） |
+| 体积 | 首页 34.7 KB，gzip 后 10.9 KB（`_worker.min.js` 整体 gzip 17 KB） |
 | 无障碍 | `:focus-visible` 统一轮廓、`#tip` 带 `role="status" aria-live="polite"`、`prefers-reduced-motion` 关动效 |
 | 响应式 | `clamp()` 字号与内边距；980px / 620px 两个断点，窄屏输入行纵向排列 |
 
