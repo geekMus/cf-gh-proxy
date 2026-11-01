@@ -86,6 +86,18 @@ test('首页：没有引用任何外部资源（零外部依赖是硬约束）',
   assert.deepEqual(unexpected, [], `不该引用外部资源，发现：${unexpected.join(', ')}`)
 })
 
+test('顶栏：logo 整块是回首页的链接（首页与错误页都有）', () => {
+  for (const html of [renderLanding(CFG), renderErrorPage(CFG, '测试原因')]) {
+    assert.match(html, /<a class="home" href="\/" title="回到首页">/, 'logo 应当包在回首页的 <a> 里')
+  }
+})
+
+test('顶栏：logo 的 href 跟着 PREFIX 走（挂在 /gh/ 下就回 /gh/）', () => {
+  const prefixed = { ...CFG, prefix: '/gh/' }
+  assert.match(renderLanding(prefixed), /<a class="home" href="\/gh\/"/)
+  assert.match(renderErrorPage(prefixed, 'x'), /<a class="home" href="\/gh\/"/)
+})
+
 test('首页：有输入框、加速按钮、清空按钮、复制按钮', () => {
   const html = renderLanding(CFG)
   assert.match(html, /id="q"/)
