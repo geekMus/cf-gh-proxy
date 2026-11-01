@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.0.3 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.0.4 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy

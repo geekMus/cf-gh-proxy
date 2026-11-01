@@ -1,5 +1,7 @@
 # cf-gh-proxy
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/geekMus/cf-gh-proxy)
+
 把 GitHub 的 release / archive / raw 链接套一层 Cloudflare Worker，走 Cloudflare 边缘节点。
 部署在你自己的域名上，不依赖任何第三方加速站。
 
@@ -53,7 +55,7 @@ jsproxy         ────┘         (MIT, CMLiussss)
 | 模块级状态 | `屏蔽爬虫UA = 屏蔽爬虫UA.concat(...)`，每次请求追加、同 isolate 无限增长 | 每次请求重新解析，无模块级可变状态 |
 | 死代码 | `exp4` 分支永远到不了（前面已被吃掉），分支上的 jsDelivr 重定向失效 | `JSDELIVR` 是真正生效的配置 |
 | 响应头 | 原样透传（含 `Set-Cookie`、CSP、Cloudflare/Azure 内部头） | 剥掉不该透传的，保留 `content-type` / `content-range` / `etag` 等 |
-| 代码组织 | 单个 480 行 `worker.js`，含内嵌 HTML | `src/` 分 6 个模块 + `test/` 62 个测试 |
+| 代码组织 | 单个 480 行 `worker.js`，含内嵌 HTML | `src/` 分 6 个模块 + `test/` 72 个测试 |
 
 ### 许可证
 
@@ -116,7 +118,32 @@ release-assets.githubusercontent.com/github-production-release-asset/…
 
 ## 快速开始
 
-### 方式 A：只想跑起来（不克隆仓库）
+三种方式，按你的需要挑一种：
+
+| 方式 | 适合谁 | 要做的事 | 耗时 |
+|---|---|---|---|
+| [A. 一键部署](#方式-a一键部署推荐) | 只想有个能用的加速地址 | 点一个按钮，授权 GitHub | 约 1 分钟 |
+| [B. 粘贴单文件](#方式-b粘贴单文件不克隆仓库) | 想最快、不想让 Cloudflare 碰仓库 | 复制 `_worker.js` 全文粘进 Dashboard | 约 2 分钟 |
+| [C. 改代码](#方式-c改代码用-wrangler) | 想改功能、跑测试 | `git clone` + `npm run deploy` | 约 5 分钟 |
+
+### 方式 A：一键部署（推荐）
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/geekMus/cf-gh-proxy)
+
+点上面的按钮，然后：
+
+1. Cloudflare 会让你登录并授权它读取你的 GitHub 账号
+2. 它把本仓库 **clone 一份到你自己的 GitHub 账号**下（不是部署到我的仓库，是你的）
+3. 填一个仓库名和 Worker 名（默认 `cf-gh-proxy`，可以改）
+4. 点 **Deploy**，等它构建完成（约 30 秒）
+
+部署完你会得到一个 `https://<worker名>.<你的子域>.workers.dev` 地址，直接可用。
+
+**这个按钮背后做了什么**：Cloudflare 用 Workers Builds 从你克隆出来的仓库构建部署 —— 它读 `wrangler.toml` 和 `package.json`，走本仓库自定义的 `deploy` 脚本（先 `node scripts/build.mjs` 打包成 `_worker.js`，再 `wrangler deploy --main _worker.js`）。所以线上跑的和 `_worker.js` 是同一份字节。
+
+**注意**：一键部署是「一次性快照」——它给你的是一个独立仓库，之后本仓库更新了不会自动同步过去。想跟上更新，用下面的方式 B（永远取最新构建产物），或者在你克隆出来的仓库里手动 `git pull upstream main`。
+
+### 方式 B：粘贴单文件（不克隆仓库）
 
 单文件地址：
 
@@ -140,7 +167,7 @@ https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.js
 
 > 如果你的网络访问 `raw.githubusercontent.com` 不稳定，可以用 GitHub 页面下载：仓库主页 → `_worker.js` → 右上角 **Raw** 按钮，效果一样。
 
-### 方式 B：改代码
+### 方式 C：改代码（用 wrangler）
 
 #### 1. 装依赖
 
@@ -171,7 +198,7 @@ npm run deploy              # 先构建单文件，再部署它
 
 ## 部署后：拿到地址、绑自己的域名
 
-**拿到默认地址。** 用方式 A 在 Dashboard 建的 Worker，地址是 `https://<worker名>.<你的子域>.workers.dev`。`<你的子域>` 在 Dashboard → Workers & Pages 页面顶部能看到，形如 `xxx.workers.dev`。这个地址不用任何配置就能用，也能直接配到下载工具里。
+**拿到默认地址。** 三种方式建的 Worker，地址都是 `https://<worker名>.<你的子域>.workers.dev`。`<你的子域>` 在 Dashboard → Workers & Pages 页面顶部能看到，形如 `xxx.workers.dev`。这个地址不用任何配置就能用，也能直接配到下载工具里。
 
 **绑自己的域名（可选，但强烈建议）。** `workers.dev` 在国内经常被墙，绑自己的域名才稳定：
 
@@ -287,7 +314,7 @@ https://gh.example.com/o/r/releases/download/v1.0.0/app.zip
 ## 开发
 
 ```bash
-npm test                # 62 个单元测试，纯桩无网络
+npm test                # 72 个单元测试，纯桩无网络
 npm run check           # 语法检查
 npm run build           # 构建单文件 _worker.js
 npm run test:build      # 验证单文件与源码行为一致（16 项断言）

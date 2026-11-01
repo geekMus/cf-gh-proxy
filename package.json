@@ -1,6 +1,6 @@
 {
   "name": "cf-gh-proxy",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "description": "GitHub 文件加速 Cloudflare Worker：把 release / archive / raw 链接走 Cloudflare 边缘",
@@ -27,6 +27,43 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "cloudflare": {
+    "bindings": {
+      "PREFIX": {
+        "description": "路径前缀。留空或 `/` 表示直接用根路径；填 `/gh/` 则地址要写成 `https://<你的域名>/gh/https://github.com/...`。"
+      },
+      "JSDELIVR": {
+        "description": "设为 `1` 时，把 `blob` / `raw` 路径改走 jsDelivr CDN。只对固定 tag 或 commit SHA 生效，分支名（如 `main`）不改写——jsDelivr 对分支缓存激进，会返回旧内容。"
+      },
+      "CACHE_TTL": {
+        "description": "普通路径的边缘缓存秒数，默认 `300`。"
+      },
+      "IMMUTABLE_CACHE_TTL": {
+        "description": "带版本号或 commit SHA 的路径（内容不会变）的缓存秒数，默认 `86400`。"
+      },
+      "UPSTREAM_TIMEOUT": {
+        "description": "单次回源超时毫秒数，默认 `30000`。超时不会卡住请求，会返回 504。"
+      },
+      "MAX_REDIRECTS": {
+        "description": "最多跟随几次上游跳转，默认 `5`。GitHub 的 `releases/latest` 要跳两跳，不要设成 1。"
+      },
+      "ALLOW_AUTH": {
+        "description": "设为 `1` 才会把客户端的 `Authorization` / `Cookie` 转发给上游。默认关闭——这个 Worker 只代理公开文件，没有理由把你的凭据送出去。"
+      },
+      "BLOCKED_UA": {
+        "description": "要伪装成 nginx 页面的爬虫 UA，逗号分隔，默认 `netcraft`。"
+      },
+      "LANDING_LINK": {
+        "description": "首页说明页里「更多」链接指向哪里，默认 `https://github.com/`。"
+      },
+      "URL302": {
+        "description": "可选。设了就让首页 302 跳到这个地址（兼容上游变量）。"
+      },
+      "URL": {
+        "description": "可选。设为 `nginx` 让首页显示 nginx 默认页（伪装）；设成其他地址则等同 `URL302`（兼容上游变量）。"
+      }
+    }
   },
   "devDependencies": {
     "esbuild": "^0.28.0",
