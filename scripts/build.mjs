@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ============================================================================
-// 把 src/ 下分模块的源码打包成**可直接粘贴的单文件**，产出两个版本。
+// 把 src/ 下分模块的源码产出**两个可直接粘贴的单文件**。
 //
 // 为什么要有这个脚本：
 //   上游 cmliu/CF-Workers-GitHub 是单文件分发——别人不用克隆仓库，把内容粘进
@@ -8,11 +8,19 @@
 //   能产出同样的单文件，否则对使用者是倒退。
 //
 // 两个版本（同一份源码，两种用途）：
-//   _worker.min.js   压缩版 —— **部署用这个**。变量名缩短、空白与换行去掉，
-//                    执行逻辑与源码版完全相同，只是文件更短：上传更快、解析更快。
+//   _worker.min.js   压缩版 —— **部署用这个**。变量名缩短、空白与换行去掉、
+//                    中文不转义成 \uXXXX（charset:'utf8'），文件最短：上传更快、
+//                    解析更快。执行逻辑与源码版完全相同。
 //                    不混淆（混淆会引入字符串数组查表与控制流间接，实测拖慢执行）。
-//   _worker.js       源码版 —— **给人看的**。可读、带注释、带归属声明。想看懂它在
-//                    干什么、想改一行、想审计安全，都用这个。它也能直接跑。
+//   _worker.js       源码版 —— **给人看的**。带**全部注释**、带归属声明，分模块
+//                    拼接而成（不走压缩器，所以注释一行不丢）。想看懂它在干什么、
+//                    想改一行、想审计安全，都用这个。它也能直接跑。
+//
+// 为什么源码版不用 esbuild：
+//   esbuild 即使在 minify:false 下也会把 `//` 注释全部剥掉（只有 legalComments
+//   管法务注释）。那样产出的「源码版」只剩代码骨架，注释全无，对「方便用户自己
+//   看」这个目的等于没有。所以源码版改为按依赖顺序拼接六个模块：只删 import 行、
+//   把 `export function` 还原成 `function`，其余（含所有注释）原样保留。
 //
 // 用法：
 //   node scripts/build.mjs           # 产出两个版本
@@ -53,7 +61,7 @@ function bannerFor(kind) {
   const how =
     kind === 'min'
       ? '本文件为压缩版，**部署用这个**：与源码版执行逻辑完全一致，只是去掉了\n *   空白、换行与长变量名，上传与解析更快。想看可读的实现请用 _worker.js。'
-      : '本文件为源码版，**给人看的**：可读、带注释，便于审计与改动。\n *   部署请用 _worker.min.js（逻辑相同但更短）。\n *\n * 用法（不装任何工具）：整段复制本文件内容，粘贴到\n *   Cloudflare Dashboard → Workers & Pages → Create Worker → 编辑代码。'
+      : '本文件为源码版，**给人看的**：分模块原样拼接，注释一行不丢，便于审计与改动。\n *   部署请用 _worker.min.js（逻辑相同但更短）。\n *\n * 用法（不装任何工具）：整段复制本文件内容，粘贴到\n *   Cloudflare Dashboard → Workers & Pages → Create Worker → 编辑代码。'
   return `/**
  * cf-gh-proxy v${pkg.version} —— GitHub 文件加速 Cloudflare Worker
  *
@@ -67,7 +75,8 @@ function bannerFor(kind) {
  */`
 }
 
-async function bundle(minify) {
+// ---- 压缩版：交给 esbuild ------------------------------------------------
+async function bundleMin() {
   let result
   try {
     result = await build({
@@ -78,19 +87,65 @@ async function bundle(minify) {
       target: 'es2022',
       // 不要 keepNames，否则 esbuild 会注入大量 __name(...)，既增大体积又难读
       keepNames: false,
-      minify,
+      minify: true,
       sourcemap: false,
       write: false,
       // banner 在落盘前统一拼（见 writeArtifact），避免影响压缩率
       legalComments: 'none',
+      // 关键：默认 charset 是 'ascii'，会把每个汉字转义成 \uXXXX（3 字节变 6 字节）。
+      // 本项目界面文案与错误原因全是中文，实测转义会让压缩版多出 5.6 KB。
+      charset: 'utf8',
       logLevel: 'warning',
     })
   } catch (err) {
-    console.error('ERR 构建失败：')
+    console.error('ERR 压缩版构建失败：')
     console.error(err.message || err)
     process.exit(1)
   }
   return result.outputFiles[0].text
+}
+
+// ---- 源码版：按依赖顺序拼接，保留全部注释 --------------------------------
+// 顺序必须是拓扑序：被依赖的在前。已核查六模块无同名顶层声明，所以拼接安全。
+const MODULES = [
+  { file: 'config.js', title: '配置解析' },
+  { file: 'validate.js', title: '路径校验' },
+  { file: 'proxy.js', title: '代理与改写' },
+  { file: 'upstream.js', title: '跟随重定向' },
+  { file: 'pages.js', title: '页面渲染' },
+  { file: 'index.js', title: '入口' },
+]
+
+function stripModuleSyntax(text, isFirst) {
+  let out = text
+  // 去掉模块内的 'use strict'（拼接后只在文件最顶部保留一份）
+  out = out.replace(/^'use strict'\s*\n+/, isFirst ? "'use strict'\n\n" : '')
+  // 去掉全部 import 行（拼接后同处一个作用域，不需要 import）
+  out = out.replace(/^import\s[^\n]*\n/gm, '')
+  // 把导出的函数声明还原成普通声明（导出由末尾唯一的 export default 承担）
+  out = out.replace(/^export\s+(async\s+function\s)/gm, '$1')
+  out = out.replace(/^export\s+(function\s)/gm, '$1')
+  // 折叠被 import 行留下的空行（连续三个以上空行压成两个）
+  out = out.replace(/\n{3,}/g, '\n\n')
+  return out.trim() + '\n'
+}
+
+function buildSource() {
+  const parts = []
+  for (const m of MODULES) {
+    const p = resolve(ROOT, 'src', m.file)
+    if (!existsSync(p)) {
+      console.error(`ERR 找不到模块：${p}`)
+      process.exit(1)
+    }
+    const raw = readFileSync(p, 'utf8')
+    const head =
+      `// ============================================================================\n` +
+      `// 模块：src/${m.file} —— ${m.title}\n` +
+      `// ============================================================================\n\n`
+    parts.push(head + stripModuleSyntax(raw, m.file === 'config.js'))
+  }
+  return parts.join('\n')
 }
 
 // 产物形态自检：任何版本都不许残留模块语法或 sourcemap 引用
@@ -117,7 +172,7 @@ function writeArtifact(file, code, banner, label, note) {
   const bytes = Buffer.byteLength(full, 'utf8')
   if (CHECK_ONLY) {
     console.log(`OK ${label} 构建校验通过：${bytes} 字节（约 ${(bytes / 1024).toFixed(1)} KB）`)
-    return { file, bytes }
+    return { file, bytes, full }
   }
   const out = resolve(ROOT, file)
   writeFileSync(out, full, 'utf8')
@@ -129,7 +184,7 @@ function writeArtifact(file, code, banner, label, note) {
   console.log(
     `OK 已生成 ${file.padEnd(16)} ${String(bytes).padStart(7)} 字节  ${(bytes / 1024).toFixed(1).padStart(6)} KB  ${String(full.split('\n').length).padStart(5)} 行  ${note}`
   )
-  return { file, bytes }
+  return { file, bytes, full }
 }
 
 if (!existsSync(ENTRY)) {
@@ -141,14 +196,27 @@ const built = []
 
 // ---- 压缩版（部署用） ------------------------------------------------------
 if (want.min) {
-  const code = await bundle(true)
+  const code = await bundleMin()
   built.push(writeArtifact('_worker.min.js', code, bannerFor('min'), '压缩版', 'minified · 部署用'))
 }
 
 // ---- 源码版（给人看的） ----------------------------------------------------
 if (want.source) {
-  const code = await bundle(false)
-  built.push(writeArtifact('_worker.js', code, bannerFor('source'), '源码版', '可读 · 供审计与改动'))
+  const code = buildSource()
+  const rec = writeArtifact('_worker.js', code, bannerFor('source'), '源码版', '可读 · 供审计与改动')
+  // 源码版的核心承诺是「注释一行不丢」，落盘后立刻核对：
+  // 与六个源文件的注释行总数比对，少了就说明拼接过程吞掉了注释。
+  let expected = 0
+  for (const m of MODULES) {
+    expected += (readFileSync(resolve(ROOT, 'src', m.file), 'utf8').match(/^\s*\/\//gm) || []).length
+  }
+  const got = (rec.full.match(/^\s*\/\//gm) || []).length
+  if (got < expected) {
+    console.error(`ERR 源码版注释丢失：源文件共 ${expected} 行 //，产物只有 ${got} 行`)
+    process.exit(1)
+  }
+  console.log(`OK 源码版注释完整：源文件 ${expected} 行 // → 产物 ${got} 行（含模块分隔头）`)
+  built.push(rec)
 }
 
 if (!built.length) {

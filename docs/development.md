@@ -25,12 +25,19 @@ npx wrangler tail       # 看线上实时日志
 
 | 产物 | 给谁 | 特点 |
 |---|---|---|
-| `_worker.min.js` | **部署用这个** | esbuild 压缩：去空白换行、缩短标识符。57 KB（gzip 17 KB） |
-| `_worker.js` | 给人看的 | 可读、带注释、带归属声明。66 KB（gzip 19 KB）。也能直接跑 |
+| `_worker.min.js` | **部署用这个** | esbuild 压缩：去空白换行、缩短标识符、中文不转义。51 KB（gzip 17 KB） |
+| `_worker.js` | 给人看的 | 六个模块按依赖顺序拼接，**注释一行不丢**。84 KB（gzip 28 KB）。也能直接跑 |
 
-两个都是从 `src/` 打包出来的单文件 ESM：零 import、零 require、保留 `export default { fetch }`。
+两个都是单文件 ESM：零 import、零 require、保留 `export default { fetch }`。
 
-**为什么不做混淆**：混淆会引入字符串数组查表和控制流间接，那是真正的性能损失。`npm run bench` 实测两个版本差异在 ±5% 内且方向不固定（多跑几轮压缩版偶尔更快），属于测量噪声。所以压缩只用来减小体积——上传更快、解析更快，执行逻辑不动。
+**两个版本是怎么产出的（不一样，别以为是同一套流程跑两遍）**：
+
+- **压缩版**走 esbuild（`minify: true`、`charset: 'utf8'`）。`charset` 是关键：esbuild 默认 `'ascii'`，会把每个汉字转义成 `\uXXXX`，3 字节变 6 字节。本项目界面文案与错误原因全是中文，实测转义让压缩版白白多出 5.6 KB（57,351 → 51,734 字节，未含版本横幅）。改 `utf8` 只改文件编码，不改行为。
+- **源码版不走 esbuild**。esbuild 即使 `minify: false` 也会把 `//` 注释全部剥掉（只有 `legalComments` 管法务注释），那样产出的「源码版」只剩代码骨架——对「方便用户自己看」这个目的等于没有。所以源码版由 `buildSource()` 按拓扑序拼接 `config → validate → proxy → upstream → pages → index`：只删 `import` 行、把 `export function` 还原成 `function`，其余原样保留。六个模块已核查**无同名顶层声明**，拼接安全。
+  - 拼接后立刻核对注释完整性：源文件共 194 行 `//`，产物必须不少于这个数（少了就说明注释被吞，脚本直接 `exit 1`）。
+  - 行为等价由 `npm run test:build` 兜底：同一组 12 个请求分别打 `src/index.js` 和两个产物，逐项比对状态码 / 头 / 正文 sha256。
+
+**为什么不做混淆**：混淆会引入字符串数组查表和控制流间接，那是真正的性能损失。`npm run bench` 用「成对交替 + 中位数」测稳态每请求耗时：`fetch` 先打桩（`/favicon.ico` 分支会真的去 `github.githubassets.com` 取图，不桩的话每请求测到的是 16 ms 网络往返，执行差异整个被淹掉），两个产物背靠背各跑一遍取比值，再对所有比值取中位数（串联测会把机器负载漂移算成两边的差别）。多轮实测中位比值在 0.94–1.01 之间，两个方向都跑出来过，差别比单组 ±10%–20% 的采样抖动还小，属于噪声（所以脚本把 ±5% 以内判为「无可测差异」，超出才告警）。所以压缩只用来减小体积——gzip 后 17 KB vs 28 KB，上传更快、解析更省，执行逻辑不动。
 
 ## 本地预览
 
@@ -53,7 +60,7 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 | 亮色 / 暗色 / 跟随系统 | `data-theme="auto"` 默认；`prefers-color-scheme` 负责跟随系统，`:root[data-theme=dark]` 负责显式选择 |
 | 不闪白 | 主题在 `<head>` 里同步落定（读 `localStorage('cfgh.theme')` 后立刻 `setAttribute`），不等 DOM 解析完 |
 | 不跑 JS 也不错乱 | 主题按钮的图标与文字由 CSS 按 `:root[data-theme]` 选择，JS 失效时仍显示正确状态 |
-| 体积 | 首页 32.7 KB，gzip 后 11.2 KB（`_worker.min.js` 整体 gzip 17 KB） |
+| 体积 | 首页 35.5 KB，gzip 后 11.2 KB（`_worker.min.js` 整体 gzip 17 KB） |
 | 无障碍 | `:focus-visible` 统一轮廓、`#tip` 带 `role="status" aria-live="polite"`、`prefers-reduced-motion` 关动效 |
 | 响应式 | `clamp()` 字号与内边距；980px / 620px 两个断点，窄屏输入行纵向排列 |
 
