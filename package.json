@@ -1,6 +1,6 @@
 {
   "name": "cf-gh-proxy",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "GitHub 文件加速 Cloudflare Worker：把 release / archive / raw 链接走 Cloudflare 边缘",
@@ -17,13 +17,15 @@
   "main": "src/index.js",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:min": "node scripts/build.mjs --minify",
+    "build:min": "node scripts/build.mjs --min",
     "dev": "wrangler dev",
-    "deploy": "node scripts/build.mjs && wrangler deploy --main _worker.js",
+    "deploy": "node scripts/build.mjs --min && wrangler deploy --main _worker.min.js",
     "test": "node --test test/**/*.test.js",
     "test:build": "node scripts/check-build.mjs",
     "check": "node --check src/index.js && node --check src/config.js && node --check src/proxy.js && node --check src/pages.js && node --check src/upstream.js && node --check src/validate.js",
-    "verify": "npm run check && npm test && npm run build && npm run test:build"
+    "verify": "npm run check && npm test && npm run build && npm run test:build",
+    "bench": "node scripts/bench.mjs",
+    "build:source": "node scripts/build.mjs --source"
   },
   "engines": {
     "node": ">=18"

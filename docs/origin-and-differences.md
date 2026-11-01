@@ -65,7 +65,7 @@ Copyright (c) 2026 cf-gh-proxy contributors
 - **环境变量**：`URL` / `URL302` 完全兼容；`PREFIX` / `CACHE_TTL` / `UPSTREAM_TIMEOUT` / `ALLOW_AUTH` / `JSDELIVR` 是新增的
 - **不需要改调用方**：链接形态、`?q=` 入口、裸 owner/repo 写法都一样
 - **会变的行为**：非 GitHub 域名现在返回 403（上游是放行）；客户端 Cookie 不再转发
-- **部署方式**：两种都行——粘 [`_worker.js`](../_worker.js) 到 Dashboard（和上游一样），或 `npm run deploy`（部署的也是构建出来的同一个单文件）
+- **部署方式**：两种都行——粘 [`_worker.min.js`](../_worker.min.js) 到 Dashboard（和上游一样），或 `npm run deploy`（部署的也是构建出来的同一个单文件）
 
 ## 许可
 

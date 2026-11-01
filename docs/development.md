@@ -1,22 +1,48 @@
 # 开发
 
-改了代码怎么验证、构建产物怎么来的、目录结构怎么组织。只想部署的话不需要看这份。
+改了代码怎么验证、构建产物怎么来的、页面怎么做的、目录结构怎么组织。只想部署的话不需要看这份。
 
 ## 开发
 
 ```bash
 npm test                # 93 个单元测试，纯桩无网络
-npm run check           # 语法检查
-npm run build           # 构建单文件 _worker.js
-npm run test:build      # 验证单文件与源码行为一致（16 项断言）
+npm run check           # 语法检查（六个模块逐个 node --check）
+npm run build           # 构建两个产物：_worker.min.js + _worker.js
+npm run test:build      # 验证两个产物与源码行为一致（40 项断言）
+npm run bench           # 两个产物的性能基准（冷启动 / 吞吐 / 体积）
 npm run verify          # 全套：语法 + 单测 + 构建 + 等价性
-node scripts/live-check.mjs   # 真机联调（需联网，31 项断言）
+node scripts/live-check.mjs   # 真机联调（需联网，32 项断言）
+node scripts/check-disguise.mjs  # 伪装页三变量组合（12 项断言）
+node scripts/check-workflow.cjs  # 校验 CI 配置本身（40 项断言）
 npx wrangler tail       # 看线上实时日志
 ```
 
 单元测试覆盖：配置解析、上游兼容变量、URL 构建（三种输入形态）、白名单、**路径形态校验（只代理文件、不代理网页）**、**`/blob/` 改写成 raw**、响应头清洗、缓存头、**重定向跟随（本次改造的核心）**、jsDelivr 改写、**首页与错误页（内联脚本可编译、零外部资源、主题三态、`?check=` 与真实代理判定一致、异常兜底不产生 1101）**。
 
-`npm run test:build` 做的事：同一组请求分别打到 `src/index.js` 和 `_worker.js`，逐项比对状态码、响应头、正文 sha256。构建产物和源码行为不一致时它会失败——这是「单文件分发」的安全网。
+`npm run test:build` 做的事：同一组请求分别打到 `src/index.js` 和两个产物，逐项比对状态码、响应头、正文 sha256。构建产物和源码行为不一致时它会失败——这是「单文件分发」的安全网。
+
+## 两个构建产物
+
+| 产物 | 给谁 | 特点 |
+|---|---|---|
+| `_worker.min.js` | **部署用这个** | esbuild 压缩：去空白换行、缩短标识符。57 KB（gzip 17 KB） |
+| `_worker.js` | 给人看的 | 可读、带注释、带归属声明。66 KB（gzip 19 KB）。也能直接跑 |
+
+两个都是从 `src/` 打包出来的单文件 ESM：零 import、零 require、保留 `export default { fetch }`。
+
+**为什么不做混淆**：混淆会引入字符串数组查表和控制流间接，那是真正的性能损失。`npm run bench` 实测两个版本差异在 ±5% 内且方向不固定（多跑几轮压缩版偶尔更快），属于测量噪声。所以压缩只用来减小体积——上传更快、解析更快，执行逻辑不动。
+
+## 本地预览
+
+```bash
+node scripts/preview.mjs            # 预览 src/index.js（源码，改完刷新即见）
+node scripts/preview.mjs --built    # 预览 _worker.min.js（真正要部署的那份字节）
+PORT=8801 node scripts/preview.mjs  # 换端口
+```
+
+`scripts/preview.mjs` 把 Node 的 http 请求包成 Workers 的 `Request` 交给真实的 `worker.fetch`，所以浏览器里跑的是**线上会跑的那份代码**，不是静态 HTML。改完 `src/` 不用先 `npm run build`，也不会出现「预览的是旧产物」这种假象。
+
+> 两个踩过的坑：`new URL('D:/...')` 在 Windows 上会把盘符当协议（`ERR_UNSUPPORTED_ESM_URL_SCHEME: Received protocol 'd:'`），必须用 `pathToFileURL`；`'../src/index.js'` 从仓库根解析会跑到仓库外（`ERR_MODULE_NOT_FOUND`），路径要用 `resolve(ROOT, ...)` 拼。
 
 ## 页面
 
@@ -27,42 +53,41 @@ npx wrangler tail       # 看线上实时日志
 | 亮色 / 暗色 / 跟随系统 | `data-theme="auto"` 默认；`prefers-color-scheme` 负责跟随系统，`:root[data-theme=dark]` 负责显式选择 |
 | 不闪白 | 主题在 `<head>` 里同步落定（读 `localStorage('cfgh.theme')` 后立刻 `setAttribute`），不等 DOM 解析完 |
 | 不跑 JS 也不错乱 | 主题按钮的图标与文字由 CSS 按 `:root[data-theme]` 选择，JS 失效时仍显示正确状态 |
-| 体积 | 首页约 19.8 KB，gzip 后约 6.9 KB（`_worker.js` 整体 gzip 约 14.5 KB） |
+| 体积 | 首页 32.7 KB，gzip 后 11.2 KB（`_worker.min.js` 整体 gzip 17 KB） |
 | 无障碍 | `:focus-visible` 统一轮廓、`#tip` 带 `role="status" aria-live="polite"`、`prefers-reduced-motion` 关动效 |
-| 响应式 | `clamp()` 字号与内边距；窄屏输入行纵向排列、示例地址软换行 |
+| 响应式 | `clamp()` 字号与内边距；980px / 620px 两个断点，窄屏输入行纵向排列 |
 
 **前端不做业务判定。** 点「加速」时先请求 `?check=<url>`，由后端 `validate.js` 给出判定（含同样的中文原因），前端只负责展示和跳转。上一版前端自带一份规则，与后端漂移后出现「前端放行、后端 400」的不一致——现在只有一份规则。
+
+**视觉方向**（为什么长这样、哪些地方主动降级了）记在 [`.taste-skill/notes.md`](../.taste-skill/notes.md)。三个硬约束决定了它不能长成通用落地页：
+
+1. **零外部资源**——不引字体、不引图床、不引 CDN。`test/pages.test.js` 有断言：首页 `src=`/`href=` 里不许出现外部地址。理由是一个 HTML 就是全部、能被边缘缓存、不产生额外请求、不受第三方可用性影响。
+2. **零外部图片**——这个产品没有实体、没有场景、没有人坐在屏幕前的画面，它真实的样子就是它自己吐出来的界面。所以页面的「图」是四块真实界面片段（根节点标 `data-ui`），不是假仪表盘灰条。
+3. **正文 ≥15px、字号 ≤9 档**——所以字号只有六档：16 / 17 / 20 / 26 / 60 / `clamp(30..74)`。
 
 ### 为什么不会轻易出现 1101
 
 `fetch` 外面套了一层 `try/catch`，任何未预期异常都会变成 **500 + 「内部错误：…」**，而不是 Cloudflare 的 1101 空白页（1101 只在日志里留线索，用户看到的是白屏）。`test/pages.test.js` 里用 `new Proxy({}, {get(){throw}})` 强制让配置解析抛异常来验证这条兜底，另外还覆盖了 `/%zz`、`/../../etc/passwd`、2000 个字符的路径、`%00` 等畸形输入，以及 HEAD/POST/PUT/DELETE/PATCH/OPTIONS 各方法——都不许抛。
 
-### 构建产物是自动提交的
-
-`.github/workflows/build-worker.yml` 在 `src/`、`scripts/build.mjs`、`package.json`、`package-lock.json` 变更时触发：
-
-1. 装依赖 → 语法与行尾检查 → 构建 → 产物形态检查 → 与源码行为比对
-2. 产物若与仓库里的不同，就以 `github-actions[bot]` 身份提交回 `main`，提交信息带 `[skip build]`
-
-所以**改完 `src/` 不用记得手动 `npm run build` 再提交**，CI 会补上。想本地先看效果，跑一下 `npm run build` 就行。
-
-`_worker.js` 不在 workflow 的 `paths` 里，回填提交不会再次触发构建，不会形成循环。
+同一条原则也修掉了一个真实缺陷：`/favicon.ico` 分支要去外站取图标，原来没有任何兜底，网络抖动就会抛成 500。现在失败一律落 `204`——图标丢了不算错误，绝不能因此把请求打成 500。
 
 ### 构建产物是自动提交的
 
 `.github/workflows/build-worker.yml` 在 `src/`、`scripts/build.mjs`、`package.json`、`package-lock.json` 变更时触发：
 
-1. 装依赖 → 语法与行尾检查 → 构建 → 产物形态检查 → 与源码行为比对
-2. 产物若与仓库里的不同，就以 `github-actions[bot]` 身份提交回 `main`，提交信息带 `[skip build]`
+1. 装依赖 → 语法与行尾检查 → 构建 → 产物形态检查（两个产物各查一遍：无 import、无 sourcemap、有 export、有归属声明）→ 与源码行为比对
+2. 额外断言**压缩版必须真的比源码版小**，否则说明 `--min` 没生效
+3. 产物若与仓库里的不同，就以 `github-actions[bot]` 身份提交回 `main`，提交信息带 `[skip build]`
 
 所以**改完 `src/` 不用记得手动 `npm run build` 再提交**，CI 会补上。想本地先看效果，跑一下 `npm run build` 就行。
 
-`_worker.js` 不在 workflow 的 `paths` 里，回填提交不会再次触发构建，不会形成循环。
+`_worker.js` 与 `_worker.min.js` 都不在 workflow 的 `paths` 里，回填提交不会再次触发构建，不会形成循环。
 
 ## 目录结构
 
 ```
-_worker.js              ← 构建产物（单文件，可直接粘贴；CI 自动更新）
+_worker.min.js          ← 构建产物：压缩版，部署用（CI 自动更新）
+_worker.js              ← 构建产物：源码版，给人看（CI 自动更新）
 src/
   index.js              # Worker 入口：路由分发
   config.js             # env → cfg 归一化
@@ -74,15 +99,20 @@ test/
   unit.test.js             # 配置、URL、白名单、响应头
   validate.test.js         # 路径形态校验（21 项，锁死「不代理网页」）
   redirect.test.js         # 重定向跟随（核心）
+  blob-rewrite.test.js     # /blob/ 改写成 raw
   jsdelivr.test.js         # jsDelivr 改写
   compat-upstream.test.js  # 上游 URL / URL302 兼容
+  pages.test.js            # 首页与错误页（内联脚本可编译、零外部资源、异常兜底）
 scripts/
-  build.mjs               # 打包成单文件 _worker.js
-  check-build.mjs         # 验证单文件与源码行为一致
-  check-workflow.cjs      # 校验工作流配置（26 项断言）
-  live-check.mjs          # 真机联调（需联网）
+  build.mjs               # 打包成两个单文件产物
+  check-build.mjs         # 验证两个产物与源码行为一致（40 项）
+  check-workflow.cjs      # 校验工作流配置本身（40 项）
+  check-disguise.mjs      # 伪装页三变量组合（12 项）
+  live-check.mjs          # 真机联调（需联网，32 项）
+  bench.mjs               # 两个产物的性能基准
+  preview.mjs             # 本地预览（把 Node 请求交给真实 worker.fetch）
 .github/workflows/
-  build-worker.yml        # src 变更时自动构建并回填 _worker.js
+  build-worker.yml        # src 变更时自动构建并回填两个产物
 wrangler.toml
 .gitattributes            # 强制 LF（Windows autocrlf 会污染，CI 有断言）
 ```

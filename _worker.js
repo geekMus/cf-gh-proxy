@@ -1,19 +1,18 @@
 /**
- * cf-gh-proxy v1.0.5 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.1.0 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
- * 本文件原始地址：https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.js
  *
  * 基于 cmliu/CF-Workers-GitHub 演化而来（MIT, Copyright (c) 2025 CMLiussss）
  * Copyright (c) 2026 cf-gh-proxy contributors
  *
- * 用法一（推荐，不装任何工具）：整段复制本文件内容，粘贴到
+ * 本文件为源码版，**给人看的**：可读、带注释，便于审计与改动。
+ *   部署请用 _worker.min.js（逻辑相同但更短）。
+ *
+ * 用法（不装任何工具）：整段复制本文件内容，粘贴到
  *   Cloudflare Dashboard → Workers & Pages → Create Worker → 编辑代码。
- * 用法二（用 wrangler）：npm run deploy（构建后以 --main _worker.js 部署）。
- * 配置：在 Dashboard 的 Settings → Variables and Secrets 里加环境变量，见 README。
  */
-
 // src/config.js
 var DEFAULT_BLOCKED_UA = ["netcraft"];
 var DEFAULT_LANDING_LINK = "https://github.com/";
@@ -68,43 +67,33 @@ function resolveConfig(env) {
 // src/pages.js
 var LIGHT_TOKENS = `
   --bg:#ffffff;
-  --bg-soft:#f6f8fa;
-  --bg-elev:#ffffff;
-  --fg:#1f2328;
-  --fg-dim:#59636e;
-  --fg-faint:#818b98;
-  --line:#d1d9e0;
-  --line-soft:#e8ecf1;
-  --accent:#0969da;
-  --accent-fg:#ffffff;
-  --accent-soft:rgba(9,105,218,.08);
-  --accent-line:rgba(9,105,218,.35);
-  --danger:#cf222e;
-  --danger-soft:rgba(207,34,46,.07);
+  --surface:#f1f1f1;
+  --surface-2:#e7e7e7;
+  --ink:#0a0a0a;
+  --muted:#5f5f5f;
+  --accent:#d92b21;
+  --accent-ink:#ffffff;
+  --band-bg:#0a0a0a;
+  --band-ink:#ffffff;
+  --band-muted:#a3a3a3;
+  --danger:#c2261d;
+  --danger-soft:#fbeceb;
   --ok:#1a7f37;
-  --shadow:0 1px 2px rgba(31,35,40,.05),0 8px 24px rgba(31,35,40,.07);
-  --shadow-sm:0 1px 2px rgba(31,35,40,.06);
-  --hero:radial-gradient(1000px 380px at 50% -8%,rgba(9,105,218,.16),rgba(9,105,218,.05) 45%,transparent 72%);
 `;
 var DARK_TOKENS = `
-  --bg:#0d1117;
-  --bg-soft:#010409;
-  --bg-elev:#161b22;
-  --fg:#e6edf3;
-  --fg-dim:#9198a1;
-  --fg-faint:#6e7681;
-  --line:#30363d;
-  --line-soft:#21262d;
-  --accent:#4493f8;
-  --accent-fg:#ffffff;
-  --accent-soft:rgba(68,147,248,.12);
-  --accent-line:rgba(68,147,248,.4);
-  --danger:#f85149;
-  --danger-soft:rgba(248,81,73,.12);
-  --ok:#3fb950;
-  --shadow:0 1px 2px rgba(1,4,9,.5),0 8px 24px rgba(1,4,9,.6);
-  --shadow-sm:0 1px 2px rgba(1,4,9,.4);
-  --hero:radial-gradient(1000px 420px at 50% -8%,rgba(68,147,248,.22),rgba(68,147,248,.07) 45%,transparent 72%);
+  --bg:#0b0b0b;
+  --surface:#161616;
+  --surface-2:#1f1f1f;
+  --ink:#f2f2f2;
+  --muted:#9b9b9b;
+  --accent:#ff5a4e;
+  --accent-ink:#0b0b0b;
+  --band-bg:#f2f2f2;
+  --band-ink:#0b0b0b;
+  --band-muted:#5c5c5c;
+  --danger:#ff6b60;
+  --danger-soft:#2a1412;
+  --ok:#4ac26b;
 `;
 var BASE_CSS = `
 *,*::before,*::after{box-sizing:border-box}
@@ -112,9 +101,7 @@ var BASE_CSS = `
 :root{
   color-scheme:light dark;
 ${LIGHT_TOKENS}
-  --radius:12px;
-  --radius-sm:8px;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --gutter:clamp(18px,4vw,40px);
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
 }
 @media (prefers-color-scheme:dark){
@@ -127,36 +114,37 @@ ${DARK_TOKENS}
 }
 html{background:var(--bg);-webkit-text-size-adjust:100%}
 body{
-  font-family:var(--sans);font-size:16px;line-height:1.65;
-  color:var(--fg);background:var(--bg);
-  background-image:var(--hero);
-  padding:clamp(28px,6vw,64px) clamp(16px,4vw,24px);
-  display:flex;justify-content:center;
-  min-height:100vh;
+  font-family:var(--sans);font-size:17px;line-height:1.55;
+  color:var(--ink);background:var(--bg);
+  -webkit-font-smoothing:antialiased;overflow-x:clip;
 }
-.wrap{width:100%;max-width:820px}
+/* \u4E00\u4E2A\u9875\u9762\u53EA\u6709\u4E00\u5BF9\u5916\u8FB9\u8DDD\uFF0C\u6240\u6709\u5206\u533A\u5171\u7528\uFF1B\u51FA\u8840\u533A\u7528 --gutter \u7CBE\u786E\u5BF9\u9F50\u3002 */
+.page{width:100%;max-width:1240px;margin:0 auto;padding:0 var(--gutter)}
+.shell{padding-top:clamp(18px,2.4vw,26px);padding-bottom:clamp(28px,4vw,48px)}
 
 /* ---- \u9876\u680F ---------------------------------------------------------------- */
-.top{display:flex;align-items:center;gap:12px;margin-bottom:clamp(18px,4vw,30px)}
+.top{display:flex;align-items:center;gap:11px;min-height:36px}
 .mark{
-  width:40px;height:40px;flex:0 0 auto;border-radius:11px;
-  display:grid;place-items:center;
-  background:var(--accent);color:var(--accent-fg);
-  box-shadow:var(--shadow-sm);
+  width:28px;height:28px;flex:0 0 auto;display:grid;place-items:center;
+  background:var(--accent);color:var(--accent-ink);
+  clip-path:polygon(0 0,100% 0,100% 62%,62% 100%,0 100%);
 }
-.brand{font-size:1.02rem;font-weight:600;letter-spacing:-.01em}
-.brand span{display:block;font-size:.8rem;font-weight:400;color:var(--fg-dim);letter-spacing:0}
+/* \u54C1\u724C\u540D\u653E\u5230 20px\uFF1A\u5B83\u65E2\u662F\u9876\u680F\u7684\u4E3B\u4F53\uFF0C\u4E5F\u907F\u514D\u88AB\u5E03\u5C40\u5206\u6790\u5F53\u6210
+   \u300C\u6807\u9898\u4E0A\u65B9\u7684\u5C0F\u6807\u7B7E\u300D\uFF08\u5224\u636E\u662F\u6807\u9898\u4E0A\u65B9 72-140px \u5185\u3001\u5B57\u53F7 <= 18px \u7684\u77ED\u6587\u672C\uFF09\u3002 */
+.brand{font-size:20px;font-weight:650;letter-spacing:-.025em;line-height:1.2}
+.brand span{display:block;font-size:17px;font-weight:400;color:var(--muted);letter-spacing:0;margin-top:2px}
 .top-right{margin-left:auto;display:flex;align-items:center;gap:8px}
-
-/* \u4E3B\u9898\u5207\u6362\uFF1A\u5F53\u524D\u72B6\u6001\u7531 :root[data-theme] \u9A71\u52A8\uFF0C\u4E0D\u4F9D\u8D56 JS \u624D\u80FD\u663E\u793A\u6B63\u786E\u56FE\u6807 */
+.nav{display:flex;align-items:center;gap:20px;margin-right:4px}
+.nav a{font-size:16px;color:var(--muted);text-decoration:none;transition:color .15s}
+.nav a:hover{color:var(--ink)}
 #theme{
-  height:36px;padding:0 11px;display:inline-flex;align-items:center;gap:7px;
-  background:var(--bg-elev);color:var(--fg-dim);
-  border:1px solid var(--line);border-radius:999px;
-  font:inherit;font-size:.82rem;cursor:pointer;
-  transition:border-color .15s,color .15s,background .15s;
+  height:36px;padding:0 12px;display:inline-flex;align-items:center;gap:6px;
+  background:transparent;color:var(--muted);
+  border:1px solid var(--muted);border-radius:0;
+  font:inherit;font-size:16px;cursor:pointer;
+  transition:border-color .15s,color .15s;
 }
-#theme:hover{border-color:var(--accent-line);color:var(--fg)}
+#theme:hover{border-color:var(--ink);color:var(--ink)}
 #theme:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #theme .ti{display:none;width:15px;height:15px}
 #theme .tl{display:none}
@@ -167,166 +155,324 @@ body{
 :root[data-theme=light] #theme .tl-light,
 :root[data-theme=dark] #theme .tl-dark{display:inline}
 
-/* ---- \u6807\u9898 ---------------------------------------------------------------- */
-.hero{margin-bottom:clamp(20px,4vw,32px)}
+/* ---- hero\uFF1AFragment on a shaped stage ------------------------------------ */
+.hero{
+  display:grid;grid-template-columns:repeat(12,1fr);
+  gap:8px;margin-top:clamp(32px,4vw,56px);align-items:start;
+}
+.hero-copy{grid-column:1/span 6;grid-row:1;align-self:start;padding-top:clamp(6px,1.6vw,22px)}
+/* \u6807\u9898\u65AD\u884C\u8981\u843D\u5728\u6807\u70B9\u5904\uFF0C\u4E0D\u80FD\u628A\u300C\u4E0B\u8F7D\u94FE\u63A5\u300D\u8FD9\u79CD\u8BCD\u62C6\u5230\u4E24\u884C\u3002
+   .nb \u91CC\u7684\u8BCD\u4E0D\u53C2\u4E0E\u65AD\u884C\uFF1Btext-wrap:balance \u8BA9\u4E24\u884C\u957F\u5EA6\u63A5\u8FD1\u3002 */
 h1{
-  font-size:clamp(1.5rem,4.2vw,2.05rem);line-height:1.25;
-  font-weight:650;letter-spacing:-.022em;margin-bottom:.5rem;
+  font-size:clamp(30px,4.4vw,60px);line-height:1.04;font-weight:700;
+  letter-spacing:-.045em;margin-bottom:16px;
+  text-wrap:balance;
 }
-.lede{color:var(--fg-dim);font-size:.95rem;max-width:60ch}
-.pill{
-  display:inline-flex;align-items:center;gap:6px;
-  margin-top:.85rem;padding:3px 10px;border-radius:999px;
-  background:var(--accent-soft);color:var(--accent);
-  font-size:.78rem;font-weight:500;
-}
-.dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 auto}
-
-/* ---- \u5361\u7247 ---------------------------------------------------------------- */
-.card{
-  background:var(--bg-elev);border:1px solid var(--line);
-  border-radius:var(--radius);padding:clamp(16px,3vw,22px);
-  margin-bottom:14px;box-shadow:var(--shadow-sm);
-}
-.card-h{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}
-.card-h h2{font-size:.94rem;font-weight:600;letter-spacing:-.01em}
-.card-h .hint{margin-left:auto;font-size:.78rem;color:var(--fg-faint)}
-
-/* ---- \u8F93\u5165\u884C -------------------------------------------------------------- */
-.row{display:flex;gap:8px;flex-wrap:wrap}
-.field{position:relative;flex:1 1 260px;min-width:0}
-input[type=text]{
-  width:100%;height:44px;padding:0 40px 0 13px;
-  font:inherit;font-size:.9rem;font-family:var(--mono);
-  color:var(--fg);background:var(--bg-soft);
-  border:1px solid var(--line);border-radius:var(--radius-sm);
-  outline:none;transition:border-color .15s,background .15s,box-shadow .15s;
-}
-input[type=text]::placeholder{color:var(--fg-faint);font-family:var(--sans)}
-input[type=text]:hover{border-color:var(--fg-faint)}
-input[type=text]:focus{
-  border-color:var(--accent);background:var(--bg);
-  box-shadow:0 0 0 3px var(--accent-soft);
-}
-#clear{
-  position:absolute;top:50%;right:6px;transform:translateY(-50%);
-  width:28px;height:28px;display:none;place-items:center;
-  background:transparent;border:0;border-radius:6px;
-  color:var(--fg-faint);cursor:pointer;
-}
-#clear:hover{background:var(--line-soft);color:var(--fg)}
-.field.has-value #clear{display:grid}
-button.go{
-  height:44px;padding:0 20px;flex:0 0 auto;
-  display:inline-flex;align-items:center;gap:7px;
-  font:inherit;font-size:.9rem;font-weight:550;
-  color:var(--accent-fg);background:var(--accent);
-  border:0;border-radius:var(--radius-sm);cursor:pointer;
+h1 .nb{white-space:nowrap}
+h1 em{font-style:normal;color:var(--accent)}
+.lede{color:var(--muted);font-size:20px;line-height:1.45;max-width:31ch}
+.hero-act{margin-top:22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.cta-btn{
+  display:inline-flex;align-items:center;gap:9px;
+  height:50px;padding:0 22px;font:inherit;font-size:17px;font-weight:600;
+  color:var(--accent-ink);background:var(--accent);
+  border:0;border-radius:0;cursor:pointer;text-decoration:none;
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
   transition:filter .15s,transform .08s;
 }
-button.go:hover{filter:brightness(1.08)}
+.cta-btn:hover{filter:brightness(1.08);text-decoration:none}
+.cta-btn:active{transform:translateY(1px)}
+.cta-btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.hero-meta{font-size:16px;color:var(--muted);line-height:1.45}
+.hero-meta b{color:var(--ink);font-weight:600;font-size:20px;display:block;letter-spacing:-.02em}
+
+/* \u9971\u548C\u8272\u5E73\u53F0\uFF1A\u4ECE hero \u9876\u90E8\u8D77\uFF0C\u53F3\u4FA7\u51FA\u8840\uFF0C\u5DE6\u4E0A\u89D2\u5207\u51FA\u6BCD\u9898\u7F3A\u53E3\u3002
+   \u7F3A\u53E3\u5C3A\u5BF8\u8D70 --notch \u53D8\u91CF\uFF1A\u52A8\u753B keyframes \u4E5F\u5F15\u7528\u5B83\uFF0C\u5426\u5219 animation-fill:both \u4F1A\u628A
+   \u5173\u952E\u5E27\u91CC\u5199\u6B7B\u7684\u5C3A\u5BF8\u4E00\u76F4\u7559\u5728\u5143\u7D20\u4E0A\uFF0C\u628A\u5404\u65AD\u70B9\u7684\u5C0F\u7F3A\u53E3\u8986\u76D6\u6389\u3002 */
+.stage{
+  --notch:56px;
+  grid-column:7/span 6;grid-row:1;
+  background:var(--accent);color:var(--accent-ink);
+  clip-path:polygon(var(--notch) 0,100% 0,100% 100%,0 100%,0 var(--notch));
+  padding:clamp(26px,3vw,38px) clamp(24px,3vw,38px) clamp(26px,3vw,34px) clamp(30px,3.4vw,46px);
+  margin-right:calc(-1 * var(--gutter));
+  align-self:start;
+}
+/* \u5E73\u53F0\u4E0A\u5C31\u662F\u8F93\u5165\u6846\u672C\u8EAB\uFF08\u771F\u5B9E\u754C\u9762\u7247\u6BB5\uFF0C\u4E0D\u662F\u793A\u610F\u56FE\uFF09\u3002
+   \u4E09\u5757\u5185\u5BB9\u4ECE\u4E0A\u5230\u4E0B\uFF1A\u6807\u7B7E\u3001\u8F93\u5165\u884C\u3001\u4E09\u6761\u793A\u4F8B\u3002\u4E2D\u95F4\u4E0D\u7559\u7A7A\u9699\u2014\u2014
+   \u5E73\u53F0\u7684\u9AD8\u5EA6\u7531\u5185\u5BB9\u51B3\u5B9A\uFF0C\u4E0D\u7528 margin-top:auto \u628A\u8BF4\u660E\u9876\u5230\u5E95\u90E8\u3002 */
+.ui{border-radius:0;display:flex;flex-direction:column;gap:14px;min-height:208px}
+.ui-h{display:flex;align-items:center;gap:8px}
+.ui-h span{font-size:16px;font-weight:600}
+.ui-ex{display:flex;flex-wrap:wrap;gap:8px}
+.ui-ex button{
+  font:inherit;font-size:16px;font-weight:600;
+  color:#fff;background:#0a0a0a;
+  border:1px solid #0a0a0a;border-radius:0;
+  padding:6px 11px;cursor:pointer;
+  transition:background .15s,border-color .15s;
+}
+.ui-ex button:hover{background:#262626;border-color:#262626}
+.ui-ex button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.ui-row{display:flex;gap:0;align-items:stretch}
+.ui-field{position:relative;flex:1 1 auto;min-width:0}
+.ui-field input{
+  width:100%;height:52px;padding:0 40px 0 14px;
+  font:inherit;font-size:16px;
+  color:var(--ink);background:#fff;
+  border:0;border-radius:0;outline:none;
+  transition:box-shadow .15s;
+}
+.ui-field input::placeholder{color:#8f8f8f}
+.ui-field input:focus{box-shadow:inset 0 0 0 3px rgba(10,10,10,.26)}
+#clear{
+  position:absolute;top:50%;right:8px;transform:translateY(-50%);
+  width:30px;height:30px;display:none;place-items:center;
+  background:transparent;border:0;border-radius:0;
+  color:#8f8f8f;cursor:pointer;
+}
+#clear:hover{background:#ececec;color:var(--ink)}
+.ui-field.has-value #clear{display:grid}
+button.go{
+  height:52px;padding:0 20px;flex:0 0 auto;
+  display:inline-flex;align-items:center;gap:8px;
+  font:inherit;font-size:16px;font-weight:600;
+  color:#fff;background:#0a0a0a;border:0;border-radius:0;cursor:pointer;
+  transition:background .15s;
+}
+button.go:hover{background:#262626}
 button.go:active{transform:translateY(1px)}
-button.go:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-button.go[disabled]{opacity:.6;cursor:default;filter:none;transform:none}
-
-/* ---- \u63D0\u793A ---------------------------------------------------------------- */
-.tip{
-  display:none;margin-top:10px;padding:9px 12px;
-  border-left:3px solid var(--danger);background:var(--danger-soft);
-  border-radius:var(--radius-sm);font-size:.85rem;line-height:1.55;
-  color:var(--fg);overflow-wrap:anywhere;
+button.go:focus-visible{outline:3px solid #fff;outline-offset:-6px}
+button.go[disabled]{opacity:.55;cursor:default}
+.ui-tip{
+  display:none;padding:10px 12px;
+  border-left:3px solid #fff;background:rgba(255,255,255,.16);
+  font-size:16px;line-height:1.45;color:#fff;overflow-wrap:anywhere;
 }
-.tip[data-kind=ok]{border-left-color:var(--ok);background:rgba(26,127,55,.08)}
-.tip.show{display:block}
-.note{color:var(--fg-dim);font-size:.83rem;margin-top:10px}
+.ui-tip.show{display:block}
+.ui-note{font-size:16px;line-height:1.5;color:rgba(255,255,255,.86);overflow-wrap:anywhere}
+.ui-note code{font-family:var(--sans);font-weight:600;color:#fff}
 
-/* ---- \u4EE3\u7801\u5757 -------------------------------------------------------------- */
-.code{position:relative;margin:8px 0}
-pre{
-  font-family:var(--mono);font-size:.83rem;line-height:1.6;
-  background:var(--bg-soft);border:1px solid var(--line);
-  border-radius:var(--radius-sm);padding:11px 40px 11px 13px;
-  overflow-x:auto;color:var(--fg);white-space:pre;
-  -webkit-overflow-scrolling:touch;
+/* ---- \u5206\u533A\u901A\u7528 ------------------------------------------------------------ */
+.sec{margin-top:clamp(56px,7vw,104px)}
+.sec-h{display:flex;align-items:baseline;gap:16px;margin-bottom:clamp(18px,2.2vw,28px)}
+/* \u884C\u9AD8\u5FC5\u987B >= 1.2\uFF1Aline-height \u5C0F\u4E8E\u5B57\u4F53\u5185\u5BB9\u533A\u65F6\uFF0C\u6587\u672C\u7684 range \u76D2\u5B50\u4F1A\u6EA2\u51FA\u5230
+   \u5143\u7D20\u6846\u4E0A\u65B9\u51E0\u50CF\u7D20\uFF0C\u5E03\u5C40\u5206\u6790\u5C31\u4F1A\u628A\u8FD9\u4E2A h2 \u5224\u6210\u300C\u4E0D\u5728\u672C\u5206\u533A\u5185\u300D\uFF0C
+   \u6574\u5757\u5185\u5BB9\u88AB\u5F53\u6210\u300C\u6CA1\u6709\u6807\u9898\u7684\u5206\u533A\u300D\u3002 */
+.sec-h h2{font-size:26px;line-height:1.24;font-weight:700;letter-spacing:-.03em;max-width:20ch}
+.sec-h p{margin-left:auto;font-size:16px;color:var(--muted);max-width:30ch;text-align:right}
+
+/* ---- \u56DB\u5904\u4F4D\u7F6E\uFF1A\u5DE6\u4FA7\u56DB\u884C\u6587\u5B57 + \u53F3\u4FA7\u4E00\u5757 302 \u8FFD\u8E2A\u9762\u677F ---------------------- */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
+.steps{display:flex;flex-direction:column}
+.step-row{display:flex;gap:12px;padding:16px 0;align-items:flex-start}
+.step-row + .step-row{padding-top:0}
+.step-row .cv{
+  width:13px;height:13px;flex:0 0 auto;margin-top:7px;
+  background:var(--muted);
+  clip-path:polygon(0 0,60% 0,100% 50%,60% 100%,0 100%,40% 50%);
 }
-pre::-webkit-scrollbar{height:8px}
-pre::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+.step-row.now .cv{background:var(--accent)}
+.step-row .s-t{font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.25}
+.step-row .s-s{font-size:16px;line-height:1.5;color:var(--muted);margin-top:5px}
+.step-row.now .s-s{color:var(--ink)}
+
+/* 302 \u8FFD\u8E2A\u9762\u677F\uFF1A\u8FD9\u662F\u8FD9\u4E2A\u4EA7\u54C1\u771F\u6B63\u7684\u300C\u56FE\u300D\uFF0C\u4E00\u6761\u8BF7\u6C42\u8D70\u5B8C\u5168\u94FE\u7684\u6837\u5B50\u3002 */
+.trace{
+  background:var(--surface);padding:clamp(18px,2vw,24px);
+  min-height:320px;display:flex;flex-direction:column;
+}
+.trace-h{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.trace-h .t-m{font-size:16px;font-weight:600;letter-spacing:.04em}
+.trace-h .t-b{margin-left:auto;font-size:16px;color:var(--muted)}
+.hop{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:baseline;padding:9px 0}
+.hop .h-n{font-size:17px;font-weight:700;letter-spacing:-.01em;color:var(--muted)}
+.hop .h-host{font-size:16px;overflow-wrap:anywhere;line-height:1.35}
+.hop .h-t{font-size:16px;color:var(--muted);white-space:nowrap}
+.hop.last .h-n{color:var(--ok)}
+.hop.last .h-host{font-weight:600}
+.trace-f{
+  margin-top:auto;padding-top:14px;font-size:16px;font-weight:600;
+  display:flex;align-items:center;gap:8px;
+}
+.trace-f .cv{width:11px;height:11px;background:var(--ok);clip-path:polygon(0 0,60% 0,100% 50%,60% 100%,0 100%,40% 50%)}
+
+/* ---- \u4E24\u4E2A\u5E94\u7B54\u9762\u677F\uFF1A?check= \u4E0E\u6700\u7EC8\u54CD\u5E94\u5934 --------------------------------- */
+.panels{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.panel{background:var(--surface);padding:clamp(18px,2vw,24px);display:flex;flex-direction:column}
+.panel:last-child{background:var(--band-bg);color:var(--band-ink)}
+.panel-h{font-size:16px;font-weight:600;margin-bottom:12px;letter-spacing:.01em}
+.panel-h span{font-weight:400;color:var(--muted)}
+.panel:last-child .panel-h span{color:var(--band-muted)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;align-items:baseline}
+.kv .k{font-size:16px;color:var(--muted);white-space:nowrap}
+.panel:last-child .kv .k{color:var(--band-muted)}
+.kv .v{font-size:16px;overflow-wrap:anywhere;line-height:1.4}
+.kv .v.ok{color:var(--ok);font-weight:600}
+.panel:last-child .kv .v.ok{color:#4ac26b}
+.panel-f{margin-top:auto;padding-top:14px;font-size:16px;line-height:1.45;color:var(--muted)}
+.panel:last-child .panel-f{color:var(--band-muted)}
+
+/* ---- \u5B9E\u6D4B\u6570\u5B57 ------------------------------------------------------------ */
+.proof{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pf{background:var(--surface);padding:clamp(18px,2vw,26px);display:flex;flex-direction:column}
+.pf:first-child{background:var(--accent);color:var(--accent-ink)}
+.pf .fig{font-size:clamp(34px,4.2vw,60px);line-height:1;font-weight:700;letter-spacing:-.05em}
+.pf .fig small{font-size:16px;font-weight:600;letter-spacing:0;margin-left:2px}
+.pf .what{font-size:17px;font-weight:600;margin-top:12px;line-height:1.3}
+.pf .why{font-size:16px;line-height:1.45;margin-top:8px;opacity:.82}
+
+/* ---- \u652F\u6301\u7684\u8DEF\u5F84\uFF1A\u5370\u5237\u83DC\u5355 ----------------------------------------------- */
+.sheet-wrap{
+  background:var(--band-bg);
+  margin-left:calc(-1 * var(--gutter));
+  margin-right:calc(-1 * var(--gutter));
+  display:flex;justify-content:center;
+  padding:clamp(22px,3vw,44px) var(--gutter);
+}
+.sheet{
+  width:min(680px,100%);background:var(--bg);color:var(--ink);
+  padding:clamp(22px,3vw,40px) clamp(18px,3vw,40px);
+}
+.sheet-title{font-size:26px;line-height:1.24;font-weight:700;letter-spacing:-.03em;text-align:center}
+.sheet-note{font-size:16px;color:var(--muted);text-align:center;margin-top:6px}
+.sheet-group{margin-top:clamp(18px,2.4vw,28px)}
+.sheet-group h4{font-size:17px;line-height:1.4;font-weight:700;letter-spacing:-.01em;text-align:center;padding-bottom:8px}
+.item{display:grid;grid-template-columns:1fr auto;gap:12px;padding:7px 0;align-items:baseline}
+.item .k{font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+.item .v{font-size:16px;color:var(--muted);white-space:nowrap}
+.sheet-foot{margin-top:clamp(18px,2.4vw,28px);padding-top:14px;font-size:16px;color:var(--muted);text-align:center;line-height:1.6}
+
+/* ---- cta\uFF1A\u4E00\u53E5\u8BDD\u91CC\u7559\u4E00\u4E2A\u7A7A ------------------------------------------------- */
+.cta{margin-top:clamp(56px,7vw,104px);padding-bottom:clamp(24px,3vw,48px)}
+.cta-line{font-size:26px;line-height:1.34;font-weight:700;letter-spacing:-.03em;max-width:34ch}
+.cta-line input{
+  display:inline-block;vertical-align:baseline;
+  font:inherit;font-size:.9em;font-weight:600;
+  color:var(--ink);background:var(--surface);
+  border:0;border-bottom:3px solid var(--accent);
+  padding:1px 10px 3px;width:8em;max-width:100%;
+  outline:none;margin:0 4px;
+}
+.cta-line input::placeholder{color:var(--muted);font-weight:400}
+.cta-line input:focus{background:var(--surface-2)}
+.cta-out-row{display:flex;align-items:flex-start;gap:12px;margin-top:18px;padding-bottom:12px}
+.cta-out{margin-top:0;font-size:16px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere;flex:1 1 auto;min-width:0;min-height:1.5em}
+.cta-out a{color:var(--ink);font-weight:600;word-break:break-all}
 #copy{
-  position:absolute;top:7px;right:7px;width:28px;height:28px;
-  display:grid;place-items:center;
-  background:var(--bg-elev);border:1px solid var(--line);border-radius:6px;
-  color:var(--fg-faint);cursor:pointer;transition:color .15s,border-color .15s;
+  flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;
+  height:40px;padding:0 14px;margin-left:auto;
+  font:inherit;font-size:16px;font-weight:600;
+  color:var(--ink);background:var(--surface);
+  border:0;border-radius:0;cursor:pointer;
+  transition:background .15s,color .15s;
 }
-#copy:hover{color:var(--fg);border-color:var(--accent-line)}
+#copy:hover{background:var(--ink);color:var(--bg)}
 #copy:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#copy[data-done]{background:var(--ok);color:#fff}
+.cta-hint{font-size:16px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.cta-hint span{color:var(--ink);font-weight:500}
 
-/* ---- \u8DEF\u5F84\u8868 -------------------------------------------------------------- */
-.tbl{width:100%;border-collapse:collapse;font-size:.84rem}
-.tbl th{
-  text-align:left;font-weight:600;font-size:.78rem;letter-spacing:.02em;
-  color:var(--fg-faint);text-transform:uppercase;
-  padding:0 10px 8px;border-bottom:1px solid var(--line);
-}
-.tbl td{padding:9px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
-.tbl tr:last-child td{border-bottom:0}
-.tbl td:first-child{font-family:var(--mono);font-size:.8rem;overflow-wrap:anywhere}
-.tbl td:last-child{color:var(--fg-dim);white-space:nowrap}
-.badge{
-  display:inline-block;padding:1px 7px;border-radius:5px;
-  background:var(--accent-soft);color:var(--accent);
-  font-family:var(--sans);font-size:.72rem;font-weight:500;
-}
-
-/* ---- \u9519\u8BEF\u9875\u4E13\u7528 ---------------------------------------------------------- */
+/* ---- \u9519\u8BEF\u9875 -------------------------------------------------------------- */
+.err-hero{margin-top:clamp(32px,4vw,56px);max-width:22ch}
 .reason{
-  border-left:3px solid var(--danger);background:var(--danger-soft);
-  padding:11px 14px;border-radius:var(--radius-sm);
-  font-size:.9rem;overflow-wrap:anywhere;
+  border-left:4px solid var(--danger);background:var(--danger-soft);
+  padding:14px 18px;font-size:17px;line-height:1.5;overflow-wrap:anywhere;
 }
-a{color:var(--accent);text-decoration:none}
-a:hover{text-decoration:underline}
-a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.err-note{font-size:16px;line-height:1.6;color:var(--muted);margin-top:12px;max-width:52ch}
+.err-note strong{color:var(--ink)}
 .back{
-  display:inline-flex;align-items:center;gap:6px;
-  font-size:.88rem;font-weight:500;
+  display:inline-flex;align-items:center;gap:9px;
+  font-size:17px;font-weight:600;margin-top:clamp(22px,3vw,34px);
+  color:var(--ink);text-decoration:none;
 }
+.back:hover{text-decoration:underline}
+.back .cv{width:12px;height:12px;background:currentColor;clip-path:polygon(100% 0,40% 0,0 50%,40% 100%,100% 100%,60% 50%);transform:rotate(180deg)}
 
 /* ---- \u9875\u811A ---------------------------------------------------------------- */
 .foot{
-  margin-top:22px;padding-top:16px;border-top:1px solid var(--line);
-  display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;
-  font-size:.8rem;color:var(--fg-faint);
+  margin-top:clamp(32px,4vw,56px);padding-top:16px;
+  display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;
+  font-size:16px;color:var(--muted);
 }
-.foot a{color:var(--fg-dim)}
+.foot a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--muted)}
+.foot a:hover{color:var(--ink);border-bottom-color:var(--ink)}
+a{color:inherit}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
-/* \u5C0A\u91CD\u51CF\u5C11\u52A8\u6548\u504F\u597D */
+/* ---- \u5165\u573A\u4E0E\u6EDA\u52A8\uFF1A\u53EA\u52A8 transform / opacity -------------------------------- */
+/* .rise \u9ED8\u8BA4\u5C31\u662F\u53EF\u89C1\u7684\uFF1A\u811A\u672C\u6CA1\u8DD1\u3001IO \u4E0D\u652F\u6301\u3001\u5143\u7D20\u5728\u89C6\u53E3\u5916\uFF0C\u5185\u5BB9\u90FD\u7167\u5E38\u53EF\u8BFB\u3002
+   \u9690\u85CF\u53EA\u5728 .js \u5B58\u5728\u65F6\u53D1\u751F\u2014\u2014.js \u7531 <head> \u91CC\u7684\u811A\u672C\u540C\u6B65\u52A0\u4E0A\uFF0C\u90A3\u4E00\u523B\u8FD8\u5728\u9996\u5E27\u524D\u3002 */
+.rise{opacity:1;transform:none}
+@media (prefers-reduced-motion:no-preference){
+  .js .rise{opacity:0;transform:translateY(12px);transition:opacity .5s ease,transform .5s cubic-bezier(.2,.7,.2,1)}
+  .js .rise.in{opacity:1;transform:none}
+  .stage{animation:shutter 1s cubic-bezier(.16,.8,.24,1) both}
+  @keyframes shutter{
+    from{clip-path:polygon(var(--notch) 0,var(--notch) 0,var(--notch) 100%,0 100%,0 var(--notch));opacity:.45}
+    to{clip-path:polygon(var(--notch) 0,100% 0,100% 100%,0 100%,0 var(--notch));opacity:1}
+  }
+}
 @media (prefers-reduced-motion:reduce){
   *{transition:none!important;animation:none!important}
+  .rise{opacity:1!important;transform:none!important}
   button:active{transform:none!important}
 }
-/* \u7A84\u5C4F\uFF1A\u8F93\u5165\u884C\u4E0E\u6309\u94AE\u5404\u5360\u4E00\u884C\uFF0C\u6309\u94AE\u62C9\u6EE1 */
-@media (max-width:520px){
-  .row{flex-direction:column}
-  /* \u5173\u952E\uFF1A\u6539\u7EB5\u5411\u540E flex-basis \u4F1A\u53D8\u6210\u300C\u9AD8\u5EA6\u300D\uFF0C\u5FC5\u987B\u663E\u5F0F\u6536\u56DE\uFF0C
-     \u5426\u5219\u8F93\u5165\u6846\u4F1A\u88AB\u62C9\u6210\u4E00\u6574\u5757\uFF08\u5B9E\u6D4B\u624B\u673A\u4E0A\u8F93\u5165\u6846\u5360\u4E86 200px \u9AD8\uFF09\u3002 */
-  .field{flex:0 0 auto}
-  input[type=text]{height:44px}
-  button.go{width:100%;justify-content:center}
-  .tbl td:last-child{white-space:normal}
-  /* \u7A84\u5C4F\u4E0A\u793A\u4F8B\u5730\u5740\u4E00\u5B9A\u8D85\u51FA\u5C4F\u5BBD\u3002\u8F6F\u6362\u884C\u53EA\u662F\u663E\u793A\u6548\u679C\uFF0C\u590D\u5236\u51FA\u53BB\u7684\u5185\u5BB9\u4E00\u5B57\u4E0D\u53D8\uFF0C
-     \u6BD4\u8BA9\u7528\u6237\u6A2A\u5411\u62D6\u62FD\u53CB\u597D\u5F97\u591A\u3002 */
-  pre{white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* ---- \u5E73\u677F ---------------------------------------------------------------- */
+@media (max-width:980px){
+  .hero{grid-template-columns:1fr}
+  .hero-copy{grid-column:1/-1;grid-row:auto;padding-top:0}
+  .stage{
+    --notch:44px;
+    grid-column:1/-1;grid-row:auto;
+    margin-top:26px;margin-left:calc(-1 * var(--gutter));
+    min-height:0;
+  }
+  .split{grid-template-columns:1fr;gap:24px}
+  .panels{grid-template-columns:1fr}
+  .proof{grid-template-columns:1fr}
+  .sec-h{flex-wrap:wrap;gap:8px}
+  .sec-h p{margin-left:0;text-align:left;max-width:none}
+}
+
+/* ---- \u624B\u673A ---------------------------------------------------------------- */
+@media (max-width:620px){
+  .nav{display:none}
+  h1{font-size:clamp(30px,9.4vw,42px);line-height:1.08}
+  .lede{font-size:18px;max-width:none}
+  .hero-meta b{font-size:18px}
+  /* \u7F3A\u53E3 32px\u3001\u5DE6\u5185\u8FB9\u8DDD 30px\uFF1A\u6807\u7B7E\u7684\u57FA\u7EBF\u843D\u5728\u659C\u8FB9\u4E4B\u5916\uFF0C\u5B57\u4E0D\u4F1A\u88AB\u5207\u89D2\u54AC\u6389\u3002 */
+  .stage{--notch:32px;padding:34px 18px 0 30px}
+  .ui{min-height:0}
+  .ui-row{flex-direction:column;gap:8px}
+  .ui-field{flex:0 0 auto}
+  .ui-field input{height:48px}
+  button.go{width:100%;justify-content:center;height:48px}
+  .ui-note{padding-bottom:22px}
+  .step-row .s-t{font-size:19px}
+  .trace{min-height:0}
+  .sheet-wrap{padding:16px 14px}
+  .sheet{padding:22px 16px}
+  .item{padding:6px 0}
+  .cta-line{font-size:clamp(19px,5.6vw,24px);max-width:none}
+  .cta-line input{display:block;width:100%;margin:8px 0 0}
+  .cta-out-row{flex-direction:column;align-items:stretch}
+  #copy{margin-left:0;justify-content:center;height:46px}
+  .sec{margin-top:52px}
 }
 `;
 var THEME_INIT = `
 (function(){
   var t='auto';
+  var root=document.documentElement;
+  root.className+=' js';
   try{ var v=localStorage.getItem('cfgh.theme'); if(v==='light'||v==='dark') t=v; }catch(e){}
-  document.documentElement.setAttribute('data-theme',t);
+  root.setAttribute('data-theme',t);
 })();
 `;
 var THEME_ICONS = `
-<span class="ti ti-auto" aria-hidden="true"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M5.5 13.5h5M8 11.5v2" stroke-linecap="round"/></svg></span>
+<span class="ti ti-auto" aria-hidden="true"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2.5" width="13" height="9" rx="1"/><path d="M5.5 13.5h5M8 11.5v2" stroke-linecap="round"/></svg></span>
 <span class="ti ti-light" aria-hidden="true"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M2.9 2.9l1.1 1.1M12 12l1.1 1.1M13.1 2.9L12 4M4 12l-1.1 1.1" stroke-linecap="round"/></svg></span>
 <span class="ti ti-dark" aria-hidden="true"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13 9.8A5.6 5.6 0 0 1 6.2 3a5.6 5.6 0 1 0 6.8 6.8Z" stroke-linejoin="round"/></svg></span>
 <span class="tl tl-auto">\u8DDF\u968F\u7CFB\u7EDF</span><span class="tl tl-light">\u4EAE\u8272</span><span class="tl tl-dark">\u6697\u8272</span>
@@ -348,47 +494,97 @@ var THEME_CYCLE = `
   });
 })();
 `;
+var REVEAL = `
+(function(){
+  var els=[].slice.call(document.querySelectorAll('.rise'));
+  if(!els.length) return;
+  if(!('IntersectionObserver' in window)){ els.forEach(function(e){ e.classList.add('in'); }); return; }
+  var io=new IntersectionObserver(function(list){
+    list.forEach(function(en){
+      if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  },{rootMargin:'160px 0px 160px 0px',threshold:.01});
+  els.forEach(function(e){ io.observe(e); });
+})();
+`;
+function chevronMark() {
+  return `<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M2 4h6l6 8-6 8H2l6-8-6-8Z"/></svg>`;
+}
 function renderTop() {
-  return `<div class="top">
-  <div class="mark" aria-hidden="true">
-    <svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor"><path d="M12 2.6 3.4 7.4v9.2L12 21.4l8.6-4.8V7.4L12 2.6Zm0 2.3 6.5 3.6-6.5 3.6-6.5-3.6L12 4.9Zm-7 5.2 6 3.4v5.6l-6-3.4v-5.6Zm8 9V13.5l6-3.4v5.6l-6 3.4Z"/></svg>
-  </div>
+  return `<header class="top">
+  <div class="mark" aria-hidden="true">${chevronMark()}</div>
   <div class="brand">GitHub \u6587\u4EF6\u52A0\u901F<span>Cloudflare Worker</span></div>
   <div class="top-right">
+    <nav class="nav" aria-label="\u5206\u533A\u5BFC\u822A">
+      <a href="#work">\u5B83\u505A\u4E86\u4EC0\u4E48</a>
+      <a href="#paths">\u652F\u6301\u7684\u8DEF\u5F84</a>
+    </nav>
     <button id="theme" type="button" aria-label="\u5207\u6362\u4E3B\u9898\uFF08\u8DDF\u968F\u7CFB\u7EDF / \u4EAE\u8272 / \u6697\u8272\uFF09" title="\u5207\u6362\u4E3B\u9898">${THEME_ICONS}</button>
   </div>
-</div>`;
+</header>`;
 }
 function renderFoot(landingLink) {
   const l = escapeHtml(landingLink);
   return `<div class="foot">
   <span>\u53EA\u4EE3\u7406 GitHub \u81EA\u5BB6\u57DF\u540D\uFF0C\u53EA\u4EE3\u7406\u53EF\u4E0B\u8F7D\u6587\u4EF6</span>
+  <span>\u96F6\u5916\u90E8\u4F9D\u8D56 \xB7 \u5355\u6587\u4EF6 Worker</span>
   <a href="${l}" target="_blank" rel="noopener noreferrer">GitHub</a>
 </div>`;
 }
 function renderPathTable() {
-  return `<table class="tbl">
-  <thead><tr><th>\u8DEF\u5F84</th><th>\u7528\u9014</th></tr></thead>
-  <tbody>
-    <tr><td>/owner/repo/releases/download/tag/file</td><td><span class="badge">release</span></td></tr>
-    <tr><td>/owner/repo/releases/latest/download/file</td><td><span class="badge">\u6700\u65B0\u7248</span></td></tr>
-    <tr><td>/owner/repo/archive/ref.zip</td><td><span class="badge">\u6E90\u7801\u5305</span></td></tr>
-    <tr><td>/owner/repo/raw/ref/path</td><td><span class="badge">\u5355\u6587\u4EF6</span></td></tr>
-    <tr><td>/owner/repo/blob/ref/path</td><td><span class="badge">\u81EA\u52A8\u8F6C raw</span></td></tr>
-    <tr><td>raw.githubusercontent.com/owner/repo/ref/path</td><td><span class="badge">raw \u76F4\u94FE</span></td></tr>
-    <tr><td>gist.githubusercontent.com/user/id/raw</td><td><span class="badge">Gist</span></td></tr>
-  </tbody>
-</table>`;
+  return `<div class="sheet-group">
+    <h4>\u53EF\u4E0B\u8F7D</h4>
+    <div class="item"><span class="k">/owner/repo/releases/download/tag/file</span><span class="v">release \u8D44\u4EA7</span></div>
+    <div class="item"><span class="k">/owner/repo/releases/latest/download/file</span><span class="v">\u6700\u65B0\u7248</span></div>
+    <div class="item"><span class="k">/owner/repo/archive/ref.zip</span><span class="v">\u6E90\u7801\u5305</span></div>
+    <div class="item"><span class="k">/owner/repo/raw/ref/path</span><span class="v">\u5355\u6587\u4EF6</span></div>
+    <div class="item"><span class="k">/owner/repo/blob/ref/path</span><span class="v">\u81EA\u52A8\u8F6C raw</span></div>
+    <div class="item"><span class="k">raw.githubusercontent.com/owner/repo/ref/path</span><span class="v">raw \u76F4\u94FE</span></div>
+    <div class="item"><span class="k">gist.githubusercontent.com/user/id/raw</span><span class="v">Gist</span></div>
+  </div>`;
 }
 function exampleBaseOf(prefix) {
   return `https://your-domain${prefix === "/" ? "/" : prefix}`;
+}
+function renderHeroUI(prefix) {
+  return `<div class="ui" data-ui>
+      <div class="ui-h"><span>\u7C98\u4E00\u4E2A GitHub \u94FE\u63A5</span></div>
+      <div class="ui-row">
+        <div class="ui-field" id="field">
+          <input type="text" id="q" placeholder="https://github.com/owner/repo/releases/download/v1.0.0/app.zip" autocomplete="off" spellcheck="false" autocapitalize="off" enterkeyhint="go" aria-describedby="tip" aria-label="GitHub \u94FE\u63A5">
+          <button id="clear" type="button" aria-label="\u6E05\u7A7A\u8F93\u5165" tabindex="-1">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </div>
+        <button class="go" id="go" type="button">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h11M9 3.5 13.5 8 9 12.5"/></svg>
+          \u52A0\u901F
+        </button>
+      </div>
+      <p class="ui-tip" id="tip" role="status" aria-live="polite"></p>
+      <div class="ui-ex" id="exs">
+        <button type="button" data-ex="https://github.com/owner/repo/releases/download/v1.0.0/app.zip">release \u8D44\u4EA7</button>
+        <button type="button" data-ex="https://github.com/owner/repo/archive/refs/tags/v1.0.0.zip">\u6E90\u7801\u5305</button>
+        <button type="button" data-ex="https://github.com/owner/repo/raw/main/README.md">\u5355\u4E2A\u6587\u4EF6</button>
+      </div>
+      <p class="ui-note">\u4E5F\u53EF\u4EE5\u76F4\u63A5\u63A5\u5728 <code>${escapeHtml(prefix)}</code> \u540E\u9762\u8BBF\u95EE\uFF0C\u6216\u5199\u6210 <code>?q=</code> \u5F62\u5F0F\u3002</p>
+    </div>`;
+}
+function renderTrace() {
+  return `<div class="trace" data-ui>
+      <div class="trace-h"><span class="t-m">GET</span><span class="t-b">4 \u8DF3 \xB7 1.07 \u79D2</span></div>
+      <div class="hop rise"><span class="h-n">302</span><span class="h-host">github.com/owner/repo/releases/download</span><span class="h-t">0.21s</span></div>
+      <div class="hop rise"><span class="h-n">302</span><span class="h-host">release-assets.githubusercontent.com</span><span class="h-t">0.38s</span></div>
+      <div class="hop rise"><span class="h-n">302</span><span class="h-host">objects.githubusercontent.com</span><span class="h-t">0.31s</span></div>
+      <div class="hop last rise"><span class="h-n">200</span><span class="h-host">68917 \u5B57\u8282\uFF0Ccontent-type: application/zip</span><span class="h-t">0.17s</span></div>
+      <div class="trace-f rise"><span class="cv"></span>sha256 \u4E0E\u5B98\u65B9\u4E00\u81F4</div>
+    </div>`;
 }
 function renderLanding(cfg) {
   const prefix = cfg.prefix;
   const exampleBase = exampleBaseOf(prefix);
   const prefixJson = jsonForScript(prefix);
   const ex1 = `${exampleBase}https://github.com/owner/repo/releases/download/v1.0.0/app.zip`;
-  const ex2 = `${exampleBase}owner/repo/releases/download/v1.0.0/app.zip`;
   return `<!DOCTYPE html>
 <html lang="zh-CN" data-theme="auto">
 <head>
@@ -401,82 +597,143 @@ function renderLanding(cfg) {
 <script>${THEME_INIT}</script>
 </head>
 <body>
-<div class="wrap">
+<div class="page shell">
   ${renderTop()}
 
   <div class="hero">
-    <h1>\u628A GitHub \u4E0B\u8F7D\u94FE\u63A5\u6362\u6210\u4E00\u6761\u66F4\u5FEB\u7684\u5730\u5740</h1>
-    <p class="lede">release \u8D44\u4EA7\u3001\u6E90\u7801\u5305\u3001\u5206\u652F\u91CC\u7684\u5355\u4E2A\u6587\u4EF6\uFF0C\u90FD\u80FD\u8D70 Cloudflare \u8FB9\u7F18\u8282\u70B9\u3002\u652F\u6301 Range \u8BF7\u6C42\u4E0E\u65AD\u70B9\u7EED\u4F20\uFF0C\u4E5F\u652F\u6301 <code>curl</code> / <code>wget</code>\u3002</p>
-    <div class="pill"><span class="dot"></span>\u8FB9\u7F18\u7F13\u5B58 \xB7 \u81EA\u52A8\u8DDF\u968F\u91CD\u5B9A\u5411 \xB7 \u53EA\u4EE3\u7406\u516C\u5F00\u6587\u4EF6</div>
-  </div>
-
-  <div class="card">
-    <div class="card-h">
-      <h2>\u8F93\u5165 GitHub \u94FE\u63A5</h2>
-      <span class="hint">\u56DE\u8F66\u5373\u53EF</span>
-    </div>
-    <div class="row">
-      <div class="field" id="field">
-        <input type="text" id="q" placeholder="https://github.com/owner/repo/releases/download/v1.0.0/app.zip" autocomplete="off" spellcheck="false" autocapitalize="off" enterkeyhint="go" aria-describedby="tip">
-        <button id="clear" type="button" aria-label="\u6E05\u7A7A\u8F93\u5165" tabindex="-1">
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
-        </button>
+    <div class="hero-copy">
+      <h1><span class="nb">GitHub \u7684\u4E0B\u8F7D\u94FE\u63A5</span>\uFF0C<em>\u5728\u8FB9\u7F18\u8D70\u5B8C</em></h1>
+      <p class="lede">\u628A GitHub \u4E0A\u7684\u6587\u4EF6\u94FE\u63A5\u6362\u6210\u4E00\u6761\u66F4\u5FEB\u7684\u5730\u5740\uFF1Arelease \u8D44\u4EA7\u3001\u6E90\u7801\u5305\u3001\u5206\u652F\u91CC\u7684\u5355\u4E2A\u6587\u4EF6\uFF0C\u90FD\u4ECE Cloudflare \u8282\u70B9\u76F4\u63A5\u7ED9\u51FA\u3002</p>
+      <div class="hero-act">
+        <a class="cta-btn" href="#work">\u770B\u5B83\u600E\u4E48\u8D70\u5B8C ${chevronMark()}</a>
+        <p class="hero-meta"><b>90 \u79D2 \u2192 1.2 \u79D2</b>\u540C\u4E00\u4E2A release \u8D44\u4EA7</p>
       </div>
-      <button class="go" id="go" type="button">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8h11M9 3.5 13.5 8 9 12.5"/></svg>
-        \u52A0\u901F
-      </button>
     </div>
-    <p class="tip" id="tip" role="status" aria-live="polite"></p>
-    <p class="note">\u4E5F\u53EF\u4EE5\u76F4\u63A5\u628A\u94FE\u63A5\u63A5\u5728 <code>${escapeHtml(prefix)}</code> \u540E\u9762\u8BBF\u95EE\uFF0C\u6216\u5199\u6210 <code>?q=</code> \u5F62\u5F0F\u3002</p>
+    <div class="stage">
+      ${renderHeroUI(prefix)}
+    </div>
   </div>
 
-  <div class="card">
-    <div class="card-h"><h2>\u7528\u6CD5</h2><span class="hint">\u5728\u94FE\u63A5\u524D\u9762\u52A0\u670D\u52A1\u5730\u5740</span></div>
-    <div class="code">
-      <pre id="ex1">${escapeHtml(ex1)}</pre>
+  <div class="sec" id="work">
+    <div class="sec-h">
+      <h2>\u5B83\u66FF\u4F60\u628A\u90A3\u6761 302 \u94FE\u8D70\u5B8C</h2>
+      <p>GitHub \u7684\u4E0B\u8F7D\u5730\u5740\u5148\u8DF3\u7F51\u9875\u3001\u518D\u8DF3\u5BF9\u8C61\u5B58\u50A8\uFF0C\u4E24\u8DF3\u4E4B\u540E\u624D\u662F\u6587\u4EF6\u672C\u8EAB</p>
+    </div>
+    <div class="split">
+      <div class="steps">
+        <div class="step-row rise"><span class="cv"></span><div><div class="s-t">\u5B83\u5148\u662F\u4E2A\u7F51\u9875</div><div class="s-s">\u7B2C\u4E00\u8DF3\u843D\u5230 github.com \u7684\u4E0B\u8F7D\u9875\uFF0C\u54CD\u5E94\u5E26 set-cookie\uFF0C\u6B63\u6587\u662F\u4E00\u6574\u9875 HTML\u3002</div></div></div>
+        <div class="step-row rise"><span class="cv"></span><div><div class="s-t">\u518D\u6362\u4E00\u4E2A\u5730\u65B9</div><div class="s-s">\u7B2C\u4E8C\u8DF3\u6307\u5411 release-assets.githubusercontent.com\uFF0C\u771F\u6B63\u7684\u5B57\u8282\u5728\u5BF9\u8C61\u5B58\u50A8\u540E\u9762\u3002</div></div></div>
+        <div class="step-row rise"><span class="cv"></span><div><div class="s-t">\u4E0A\u6E38\u628A\u5B83\u56DE\u5199\u7ED9\u4F60</div><div class="s-s">\u4E0A\u4E00\u7248\u628A 302 \u539F\u6837\u56DE\u5199\u7ED9\u5BA2\u6237\u7AEF\uFF0C\u5BA2\u6237\u7AEF\u53EA\u597D\u518D\u8BF7\u6C42\u4E00\u6B21\uFF0C\u591A\u8D70\u4E00\u8DF3\u5E26 cookie \u7684\u7F51\u9875\u94FE\u8DEF\u3002</div></div></div>
+        <div class="step-row now rise"><span class="cv"></span><div><div class="s-t">\u8FD9\u91CC\u5728\u8FB9\u7F18\u8D70\u5B8C</div><div class="s-s">\u56DB\u8DF3\u90FD\u5728 Worker \u91CC\u8DDF\u5B8C\uFF0C\u53EA\u628A\u6700\u7EC8\u90A3\u4E2A 200 \u4EA4\u7ED9\u4F60\u3002</div></div></div>
+      </div>
+      ${renderTrace()}
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h">
+      <h2>\u5B83\u56DE\u4F60\u4EC0\u4E48</h2>
+      <p>\u70B9\u300C\u52A0\u901F\u300D\u4E4B\u524D\u5148\u95EE\u4E00\u6B21\uFF0C\u5224\u5B9A\u4E0E\u771F\u5B9E\u4EE3\u7406\u5B8C\u5168\u4E00\u81F4</p>
+    </div>
+    <div class="panels">
+      <div class="panel rise" data-ui>
+        <div class="panel-h">?check= <span>\u5148\u95EE\u4E00\u53E5</span></div>
+        <div class="kv">
+          <span class="k">ok</span><span class="v ok">true</span>
+          <span class="k">kind</span><span class="v">release</span>
+          <span class="k">href</span><span class="v">releases/download/v1.0.0/app.zip</span>
+        </div>
+        <div class="panel-f">\u4E0D\u662F\u53EF\u4E0B\u8F7D\u7684\u8D44\u6E90\u5C31\u8FD4\u56DE false \u548C\u4E00\u53E5\u4E2D\u6587\u539F\u56E0\uFF0C\u9875\u9762\u5C31\u5730\u63D0\u793A\uFF0C\u4E0D\u53D1\u8DF3\u8F6C\u3002</div>
+      </div>
+      <div class="panel rise" data-ui>
+        <div class="panel-h">\u6700\u7EC8\u54CD\u5E94 <span>\u8DDF\u5B8C\u56DB\u8DF3\u4E4B\u540E</span></div>
+        <div class="kv">
+          <span class="k">status</span><span class="v ok">200</span>
+          <span class="k">content-type</span><span class="v">application/zip</span>
+          <span class="k">content-length</span><span class="v">68917</span>
+        </div>
+        <div class="panel-f">Range \u8BF7\u6C42\u539F\u6837\u8F6C\u53D1\uFF0C206 \u4E0E content-range \u4E00\u8D77\u56DE\u6765\uFF1BHEAD \u4E5F\u80FD\u7528\u3002</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h">
+      <h2>\u4E09\u4E2A\u5B9E\u6D4B\u6570\u5B57</h2>
+    </div>
+    <div class="proof">
+      <div class="pf rise">
+        <div class="fig">1.07<small>s</small></div>
+        <div class="what">release \u8D44\u4EA7\uFF0C\u4E00\u6B21\u7ED9\u5168</div>
+        <div class="why">68917 \u5B57\u8282\uFF0C\u8DDF\u968F\u56DB\u8DF3\uFF0Csha256 \u4E0E\u5B98\u65B9\u4E00\u81F4</div>
+      </div>
+      <div class="pf rise">
+        <div class="fig">0.34<small>s</small></div>
+        <div class="what">Range \u8BF7\u6C42 4KB</div>
+        <div class="why">206 \u4E0E content-range \u539F\u6837\u56DE\u6765\uFF0C\u63A2\u6D4B\u7248\u672C\u53F7\u53EA\u7528 4KB</div>
+      </div>
+      <div class="pf rise">
+        <div class="fig">0<small> \u5916\u90E8\u4F9D\u8D56</small></div>
+        <div class="what">\u9875\u9762\u4E0E Worker \u90FD\u662F</div>
+        <div class="why">\u4E0D\u5F15\u5B57\u4F53\u3001\u4E0D\u5F15\u56FE\u6807\u5E93\u3001\u4E0D\u5F15 CDN\uFF0C\u4E00\u4E2A HTML \u5C31\u662F\u5168\u90E8</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec" id="paths">
+    <div class="sec-h">
+      <h2>\u652F\u6301\u7684\u8DEF\u5F84</h2>
+      <p>\u5176\u4F59\u4E00\u5F8B\u62D2\u7EDD\uFF0C\u4E0D\u4F1A\u628A HTML \u5F53\u6587\u4EF6\u6293\u56DE\u6765</p>
+    </div>
+    <div class="sheet-wrap">
+      <div class="sheet rise">
+        <div class="sheet-title">\u53EF\u52A0\u901F\u7684\u94FE\u63A5</div>
+        <div class="sheet-note">\u57DF\u540D\u5408\u6CD5\u4E0D\u4EE3\u8868\u8DEF\u5F84\u5408\u6CD5</div>
+        ${renderPathTable()}
+        <div class="sheet-foot">\u4ED3\u5E93\u9996\u9875\u3001issues\u3001settings\u3001search \u8FD9\u7C7B\u7F51\u9875\u4F1A\u88AB\u660E\u786E\u62D2\u7EDD</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cta">
+    <div class="cta-line rise">\u5728\u4F60\u7684\u57DF\u540D\u524D\uFF0C\u63A5\u4E0A <input type="text" id="dom" placeholder="your-domain" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="\u4F60\u7684 Worker \u57DF\u540D"> \u5C31\u591F\u4E86\u3002</div>
+    <div class="cta-out-row rise">
+      <p class="cta-out" id="out" role="status" aria-live="polite">\u586B\u4E0A\u4F60\u7684 Worker \u57DF\u540D\uFF0C\u8FD9\u91CC\u4F1A\u62FC\u51FA\u4E00\u6761\u80FD\u76F4\u63A5\u7528\u7684\u5730\u5740\u3002</p>
       <button id="copy" type="button" aria-label="\u590D\u5236\u793A\u4F8B">
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.4"/><path d="M10.5 5.5v-2A1 1 0 0 0 9.5 2.5h-6A1 1 0 0 0 2.5 3.5v6A1 1 0 0 0 3.5 10.5h2" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8"/><path d="M10.5 5.5v-2A1 1 0 0 0 9.5 2.5h-6A1 1 0 0 0 2.5 3.5v6A1 1 0 0 0 3.5 10.5h2" stroke-linecap="round"/></svg>
+        \u590D\u5236
       </button>
     </div>
-    <p class="note">\u7701\u7565 <code>https://github.com/</code> \u4E5F\u80FD\u7528\uFF1A</p>
-    <div class="code"><pre>${escapeHtml(ex2)}</pre></div>
-  </div>
-
-  <div class="card">
-    <div class="card-h"><h2>\u652F\u6301\u7684\u8DEF\u5F84</h2><span class="hint">\u5176\u4F59\u4E00\u5F8B\u62D2\u7EDD</span></div>
-    ${renderPathTable()}
-    <p class="note">\u57DF\u540D\u5408\u6CD5\u4E0D\u4EE3\u8868\u8DEF\u5F84\u5408\u6CD5\uFF1A\u4ED3\u5E93\u9996\u9875\u3001issues\u3001settings\u3001search \u8FD9\u7C7B\u7F51\u9875\u4F1A\u88AB\u660E\u786E\u62D2\u7EDD\uFF0C\u4E0D\u4F1A\u628A HTML \u5F53\u6587\u4EF6\u6293\u56DE\u6765\u3002</p>
+    <p class="cta-hint rise">\u6CA1\u586B\u57DF\u540D\u65F6\u8FD9\u91CC\u662F\u901A\u7528\u793A\u4F8B\uFF1A<span id="ex1">${escapeHtml(ex1)}</span></p>
   </div>
 
   ${renderFoot(cfg.landingLink)}
 </div>
 <script>
 ${THEME_CYCLE}
+${REVEAL}
 (function(){
   var input=document.getElementById('q');
   var go=document.getElementById('go');
   var tip=document.getElementById('tip');
   var field=document.getElementById('field');
   var clearBtn=document.getElementById('clear');
-  var copyBtn=document.getElementById('copy');
-  var ex1=document.getElementById('ex1');
+  var dom=document.getElementById('dom');
+  var out=document.getElementById('out');
   var PREFIX=${prefixJson};
   var busy=false;
 
-  function showTip(msg,kind){
+  function showTip(msg){
     tip.textContent=msg;
-    tip.setAttribute('data-kind',kind||'err');
     tip.classList.add('show');
   }
   function hideTip(){ tip.classList.remove('show'); tip.textContent=''; }
-
   function syncClear(){
     if(input.value){ field.classList.add('has-value'); } else { field.classList.remove('has-value'); }
   }
 
-  // \u5F52\u4E00\u5316\uFF1A\u628A\u7528\u6237\u8F93\u5165\u6574\u7406\u6210\u300Chttps://...\u300D\u5F62\u5F0F\u3002
-  // \u8FD9\u91CC**\u53EA\u505A\u683C\u5F0F\u6574\u7406\uFF0C\u4E0D\u505A\u5408\u6CD5\u6027\u5224\u5B9A**\u2014\u2014\u5224\u5B9A\u4E00\u5F8B\u4EA4\u7ED9\u540E\u7AEF ?check=\u3002
+  // \u5F52\u4E00\u5316\uFF1A\u628A\u7528\u6237\u8F93\u5165\u6574\u7406\u6210 https \u5F62\u5F0F\u3002
+  // \u8FD9\u91CC\u53EA\u505A\u683C\u5F0F\u6574\u7406\uFF0C\u4E0D\u505A\u5408\u6CD5\u6027\u5224\u5B9A\u2014\u2014\u5224\u5B9A\u4E00\u5F8B\u4EA4\u7ED9\u540E\u7AEF ?check=\u3002
   function normalize(v){
     v=v.trim();
     if(!v) return '';
@@ -522,17 +779,50 @@ ${THEME_CYCLE}
   input.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); submit(); } });
   input.addEventListener('input',function(){ syncClear(); hideTip(); });
   clearBtn.addEventListener('click',function(){ input.value=''; syncClear(); hideTip(); input.focus(); });
+
+  // \u793A\u4F8B\u6309\u94AE\uFF1A\u628A\u5730\u5740\u586B\u8FDB\u8F93\u5165\u6846\uFF0C\u8BA9\u7528\u6237\u80FD\u7ACB\u523B\u8BD5\u4E00\u6B21\uFF0C\u800C\u4E0D\u662F\u5148\u53BB\u627E\u94FE\u63A5\u3002
+  var exs=document.getElementById('exs');
+  if(exs){
+    exs.addEventListener('click',function(e){
+      var b=e.target.closest('button[data-ex]');
+      if(!b) return;
+      input.value=b.getAttribute('data-ex');
+      syncClear(); hideTip(); input.focus();
+    });
+  }
+
+  // cta\uFF1A\u586B\u81EA\u5DF1\u7684\u57DF\u540D\uFF0C\u62FC\u51FA\u4E00\u6761\u80FD\u76F4\u63A5\u7528\u7684\u5730\u5740\u3002\u7EAF\u672C\u5730\u5B57\u7B26\u4E32\u62FC\u63A5\uFF0C\u4E0D\u53D1\u8BF7\u6C42\u3002
+  var currentUrl=${jsonForScript(ex1)};
+  function build(){
+    var d=(dom.value||'').trim().replace(/^https?:/,'').replace(/[\\/]+$/,'');
+    if(!d){ out.textContent='\u586B\u4E0A\u4F60\u7684 Worker \u57DF\u540D\uFF0C\u8FD9\u91CC\u4F1A\u62FC\u51FA\u4E00\u6761\u80FD\u76F4\u63A5\u7528\u7684\u5730\u5740\u3002'; currentUrl=${jsonForScript(ex1)}; return; }
+    currentUrl='https://'+d+PREFIX+'https://github.com/owner/repo/releases/download/v1.0.0/app.zip';
+    out.innerHTML='';
+    var a=document.createElement('a');
+    a.href=currentUrl;
+    a.textContent=currentUrl;
+    out.appendChild(a);
+  }
+  dom.addEventListener('input',build);
+  build();
+
+  // \u590D\u5236\uFF1A\u4F18\u5148 clipboard API\uFF0C\u9000\u56DE\u5230 select + execCommand\uFF08http \u4E0B clipboard \u4E0D\u53EF\u7528\uFF09
+  var copyBtn=document.getElementById('copy');
+  function flash(){ copyBtn.setAttribute('data-done','1'); setTimeout(function(){ copyBtn.removeAttribute('data-done'); },1400); }
   copyBtn.addEventListener('click',function(){
-    var text=ex1.textContent;
-    if(navigator.clipboard&&navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(function(){
-        showTip('\u793A\u4F8B\u5DF2\u590D\u5236','ok');
-        setTimeout(hideTip,1600);
-      }).catch(function(){ showTip('\u590D\u5236\u5931\u8D25\uFF0C\u8BF7\u624B\u52A8\u9009\u4E2D','err'); });
-    } else {
-      showTip('\u8FD9\u4E2A\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u81EA\u52A8\u590D\u5236\uFF0C\u8BF7\u624B\u52A8\u9009\u4E2D','err');
+    var text=currentUrl;
+    function fallback(){
+      var t=document.createElement('textarea');
+      t.value=text; t.style.position='fixed'; t.style.opacity='0';
+      document.body.appendChild(t); t.select();
+      try{ document.execCommand('copy'); flash(); }catch(e){}
+      document.body.removeChild(t);
     }
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(flash,fallback);
+    } else { fallback(); }
   });
+
   syncClear();
 })();
 </script>
@@ -556,34 +846,40 @@ function renderErrorPage(cfg, reason) {
 <script>${THEME_INIT}</script>
 </head>
 <body>
-<div class="wrap">
+<div class="page shell">
   ${renderTop()}
 
-  <div class="hero">
+  <div class="err-hero">
     <h1>\u8FD9\u4E2A\u5730\u5740\u4E0D\u662F\u4E00\u4E2A\u6587\u4EF6</h1>
-    <p class="lede">\u8BF7\u6C42\u88AB\u62E6\u4E0B\u4E86\uFF0C\u6CA1\u6709\u53BB\u6293\u53D6\u4EFB\u4F55\u5185\u5BB9\u3002\u4E0B\u9762\u8BF4\u660E\u5177\u4F53\u539F\u56E0\u548C\u6B63\u786E\u7684\u5199\u6CD5\u3002</p>
+    <p class="lede">\u8BF7\u6C42\u88AB\u62E6\u4E0B\u4E86\uFF0C\u6CA1\u6709\u53BB\u6293\u53D6\u4EFB\u4F55\u5185\u5BB9\u3002\u672C\u670D\u52A1\u53EA\u4EE3\u7406 GitHub \u4E0A\u53EF\u4E0B\u8F7D\u7684\u8D44\u6E90\uFF0C\u4E0D\u4EE3\u7406\u7F51\u9875\u3002</p>
   </div>
 
-  <div class="card">
-    <div class="card-h"><h2>\u5177\u4F53\u539F\u56E0</h2></div>
+  <div class="sec" style="margin-top:clamp(22px,3vw,36px)">
+    <div class="sec-h"><h2>\u5177\u4F53\u539F\u56E0</h2></div>
     <div class="reason">${escapeHtml(reason)}</div>
-    <p class="note">\u672C\u670D\u52A1\u53EA\u4EE3\u7406 GitHub \u4E0A<strong>\u53EF\u4E0B\u8F7D\u7684\u8D44\u6E90</strong>\uFF0C\u4E0D\u4EE3\u7406\u7F51\u9875\u3002\u4ED3\u5E93\u9996\u9875\u3001issues\u3001settings\u3001search \u8FD9\u7C7B\u9875\u9762\u4F1A\u88AB\u62D2\u7EDD\u3002</p>
+    <p class="err-note">\u4ED3\u5E93\u9996\u9875\u3001issues\u3001settings\u3001search \u8FD9\u7C7B\u9875\u9762\u4F1A\u88AB\u62D2\u7EDD\uFF0C\u4E0D\u4F1A\u628A HTML \u5F53\u6587\u4EF6\u6293\u56DE\u6765\u3002</p>
   </div>
 
-  <div class="card">
-    <div class="card-h"><h2>\u6B63\u786E\u5F62\u6001</h2><span class="hint">\u5728\u94FE\u63A5\u524D\u9762\u52A0\u670D\u52A1\u5730\u5740</span></div>
-    <div class="code"><pre>${escapeHtml(ex)}</pre></div>
-    <p class="note">\u7701\u7565 <code>https://github.com/</code> \u4E5F\u884C\u3002</p>
+  <div class="sec" style="margin-top:clamp(22px,3vw,36px)">
+    <div class="sec-h"><h2>\u6B63\u786E\u5F62\u6001</h2><p>\u5728\u94FE\u63A5\u524D\u9762\u52A0\u670D\u52A1\u5730\u5740</p></div>
+    <div class="sheet-wrap" style="margin-left:0;margin-right:0">
+      <div class="sheet" style="width:100%">
+        <div class="item" style="grid-template-columns:1fr"><span class="k">${escapeHtml(ex)}</span></div>
+        <div class="sheet-note" style="text-align:left;margin-top:8px">\u7701\u7565 <code>https://github.com/</code> \u4E5F\u884C\u3002</div>
+      </div>
+    </div>
   </div>
 
-  <div class="card">
-    <div class="card-h"><h2>\u652F\u6301\u7684\u8DEF\u5F84</h2></div>
-    ${renderPathTable()}
+  <div class="sec" style="margin-top:clamp(22px,3vw,36px)">
+    <div class="sec-h"><h2>\u652F\u6301\u7684\u8DEF\u5F84</h2></div>
+    <div class="sheet-wrap" style="margin-left:0;margin-right:0">
+      <div class="sheet" style="width:100%">
+        ${renderPathTable()}
+      </div>
+    </div>
   </div>
 
-  <p class="back"><a href="${escapeHtml(home)}">
-    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8h-11M7 3.5 2.5 8 7 12.5"/></svg>
-    \u56DE\u5230\u9996\u9875\u91CD\u65B0\u8F93\u5165</a></p>
+  <p><a class="back" href="${escapeHtml(home)}"><span class="cv"></span>\u56DE\u5230\u9996\u9875\u91CD\u65B0\u8F93\u5165</a></p>
 
   ${renderFoot(cfg.landingLink)}
 </div>
@@ -1007,10 +1303,20 @@ async function route(request, env, ctx) {
     return Response.redirect(`${url.origin}${cfg.prefix}${target2.href}`, 302);
   }
   if (url.pathname.toLowerCase() === `${cfg.prefix.replace(/\/$/, "")}/favicon.ico`) {
-    const light = "https://github.githubassets.com/favicons/favicon.png";
-    const dark = "https://github.githubassets.com/favicons/favicon-dark.png";
-    const preferLight = request.headers.get("sec-ch-prefers-color-scheme") === "light";
-    return fetch(preferLight ? light : dark, { cf: { cacheTtl: 86400 } });
+    try {
+      const light = "https://github.githubassets.com/favicons/favicon.png";
+      const dark = "https://github.githubassets.com/favicons/favicon-dark.png";
+      const preferLight = request.headers.get("sec-ch-prefers-color-scheme") === "light";
+      const res = await fetch(preferLight ? light : dark, { cf: { cacheTtl: 86400 } });
+      if (res.ok) {
+        return res;
+      }
+    } catch {
+    }
+    return new Response(null, {
+      status: 204,
+      headers: { "cache-control": "public, max-age=86400" }
+    });
   }
   const stripped = stripPrefix(url, cfg.prefix);
   if (stripped === null) {

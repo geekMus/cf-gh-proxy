@@ -1,7 +1,12 @@
-// 验证构建产物 _worker.js 与源码 src/index.js 行为完全一致
-// 做法：同一组请求分别打到「源码模块」和「单文件产物」，逐项比对状态码/头/正文。
+// 验证两个构建产物与源码 src/index.js 行为完全一致。
+// 做法：同一组请求分别打到「源码模块」和每个「单文件产物」，逐项比对状态码/头/正文。
+//
+// 为什么要测两个产物：_worker.min.js 是**部署版本**，_worker.js 是给人看的。
+// 两者都由同一份源码构建，但压缩可能改变行为（例如正则、字符串转义、ASI 边界），
+// 所以必须各自与源码逐一比对，不能只测其中一个。
 
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 const ENV = {
   PREFIX: '/',
@@ -18,7 +23,6 @@ const ORIGIN = 'https://gh.test'
 const CTX = { waitUntil() {} }
 
 const srcWorker = (await import('../src/index.js')).default
-const builtWorker = (await import('../_worker.js')).default
 
 let pass = 0
 let fail = 0
@@ -46,57 +50,75 @@ const cases = [
   ['前缀剥离后首页', '/gh', { ...ENV, PREFIX: '/gh' }],
   ['favicon', '/favicon.ico', ENV],
   ['?q= 快捷入口', '/?q=https://github.com/geekMus/container-autoupdate', ENV],
+  ['?check 合法链接', '/?check=' + encodeURIComponent('https://github.com/o/r/releases/download/v1/x.zip'), ENV],
+  ['?check 网页路径被拒', '/?check=' + encodeURIComponent('github.com/login'), ENV],
+  ['?check 空值', '/?check=', ENV],
 ]
 
-for (const [name, path, env, ua] of cases) {
-  const headers = ua ? { 'user-agent': ua } : {}
-  const req1 = new Request(ORIGIN + path, { headers })
-  const req2 = new Request(ORIGIN + path, { headers })
+const ARTIFACTS = [
+  { file: '_worker.min.js', label: '压缩版（部署用）' },
+  { file: '_worker.js', label: '源码版（供阅读）' },
+]
 
-  let r1, r2, err1 = null, err2 = null
-  try {
-    r1 = await srcWorker.fetch(req1, env, CTX)
-  } catch (e) {
-    err1 = e.message
+for (const art of ARTIFACTS) {
+  const url = new URL('../' + art.file, import.meta.url)
+  const text = readFileSync(url, 'utf8')
+  console.log(`\n--- ${art.label}  ${art.file}  ${Buffer.byteLength(text)} 字节 ---`)
+  const worker = (await import(url.href)).default
+
+  for (const [name, path, env, ua] of cases) {
+    const headers = ua ? { 'user-agent': ua } : {}
+    const req1 = new Request(ORIGIN + path, { headers })
+    const req2 = new Request(ORIGIN + path, { headers })
+
+    let r1, r2, err1 = null, err2 = null
+    try {
+      r1 = await srcWorker.fetch(req1, env, CTX)
+    } catch (e) {
+      err1 = e.message
+    }
+    try {
+      r2 = await worker.fetch(req2, env, CTX)
+    } catch (e) {
+      err2 = e.message
+    }
+
+    if (err1 || err2) {
+      // 两边都报错（例如需要联网）视为一致
+      ok(`${name}：两边行为一致（都抛错）`, err1 === err2, `${err1} / ${err2}`)
+      continue
+    }
+
+    const sameStatus = r1.status === r2.status
+    const ct1 = r1.headers.get('content-type')
+    const ct2 = r2.headers.get('content-type')
+    const loc1 = r1.headers.get('location')
+    const loc2 = r2.headers.get('location')
+    const b1 = await r1.text()
+    const b2 = await r2.text()
+    const h1 = createHash('sha256').update(b1).digest('hex')
+    const h2 = createHash('sha256').update(b2).digest('hex')
+
+    ok(
+      `${name}：状态码/头/正文一致`,
+      sameStatus && ct1 === ct2 && loc1 === loc2 && h1 === h2,
+      `status ${r1.status}/${r2.status}  body ${h1.slice(0, 8)}/${h2.slice(0, 8)}`
+    )
   }
-  try {
-    r2 = await builtWorker.fetch(req2, env, CTX)
-  } catch (e) {
-    err2 = e.message
-  }
 
-  if (err1 || err2) {
-    // 两边都报错（例如需要联网）视为一致
-    ok(`${name}：两边行为一致（都抛错）`, err1 === err2, `${err1} / ${err2}`)
-    continue
-  }
-
-  const sameStatus = r1.status === r2.status
-  const ct1 = r1.headers.get('content-type')
-  const ct2 = r2.headers.get('content-type')
-  const loc1 = r1.headers.get('location')
-  const loc2 = r2.headers.get('location')
-  const b1 = await r1.text()
-  const b2 = await r2.text()
-  const h1 = createHash('sha256').update(b1).digest('hex')
-  const h2 = createHash('sha256').update(b2).digest('hex')
-
+  // 产物本身的形态检查
+  ok(`${art.file} 无 import 语句`, !/^\s*import\s/m.test(text))
+  ok(`${art.file} 无 require()`, !/\brequire\s*\(/.test(text))
+  ok(`${art.file} 无 sourcemap 引用`, !text.includes('sourceMappingURL'))
   ok(
-    `${name}：状态码/头/正文一致`,
-    sameStatus && ct1 === ct2 && loc1 === loc2 && h1 === h2,
-    `status ${r1.status}/${r2.status}  body ${h1.slice(0, 8)}/${h2.slice(0, 8)}`
+    `${art.file} 有 export default`,
+    /export\s*\{[\s\S]*default/.test(text) || /export\s+default/.test(text)
   )
+  ok(`${art.file} 含上游归属声明`, text.includes('CMLiussss'))
+  ok(`${art.file} 含本项目版权`, text.includes('cf-gh-proxy contributors'))
+  ok(`${art.file} 无 __name 噪音`, (text.match(/__name\(/g) || []).length === 0)
+  ok(`${art.file} 纯 LF（无 CR）`, (text.match(/\r/g) || []).length === 0)
 }
-
-// 产物本身的形态检查
-const builtText = (await import('node:fs')).readFileSync(new URL('../_worker.js', import.meta.url), 'utf8')
-ok('产物无 import 语句', !/^\s*import\s/m.test(builtText))
-ok('产物无 require()', !/\brequire\s*\(/.test(builtText))
-ok('产物无 sourcemap 引用', !builtText.includes('sourceMappingURL'))
-ok('产物有 export default', /export\s*\{[\s\S]*default/.test(builtText) || /export\s+default/.test(builtText))
-ok('产物含上游归属声明', builtText.includes('CMLiussss'))
-ok('产物含本项目版权', builtText.includes('cf-gh-proxy contributors'))
-ok('产物无 __name 噪音', (builtText.match(/__name\(/g) || []).length === 0)
 
 console.log(`\n===== 结果：PASS=${pass} FAIL=${fail} =====`)
 process.exit(fail === 0 ? 0 : 1)

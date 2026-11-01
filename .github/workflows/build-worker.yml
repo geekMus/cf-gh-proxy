@@ -1,10 +1,12 @@
 name: Build single-file worker
 
-# 把 src/ 下分模块的源码构建成单文件 _worker.js，并自动提交回 main。
+# 把 src/ 下分模块的源码构建成两个单文件产物，并自动提交回 main：
+#   _worker.min.js  压缩版 —— 部署用（README 里指向它，npm run deploy 用它）
+#   _worker.js      源码版 —— 给人看（可读、可审计、可改）
 #
 # 为什么需要这个：
-#   _worker.js 是给别人「打开链接、全选复制、粘进 Cloudflare」用的分发产物。
-#   如果它只能靠人工 `npm run build` 更新，迟早会与 src/ 不同步——
+#   这两个文件是给别人「打开链接、全选复制、粘进 Cloudflare」用的分发产物。
+#   如果它们只能靠人工 `npm run build` 更新，迟早会与 src/ 不同步——
 #   别人复制到的就是过期代码，而且这种偏差很难被发现。
 #
 # 触发范围刻意收窄到「会影响产物的文件」：
@@ -36,7 +38,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     # 回填产生的提交带 [skip build] 标记，这里再兜一层，防止自触发循环。
-    # 实际上回填只改 _worker.js，不在上面的 paths 里，本来就不会触发；
+    # 实际上回填只改两个产物文件，不在上面的 paths 里，本来就不会触发；
     # 但万一以后 paths 被放宽，这层能防止无限循环。
     if: "!contains(github.event.head_commit.message, '[skip build]')"
     steps:
@@ -73,27 +75,38 @@ jobs:
           done
           [ "$bad" -eq 0 ] || exit 1
 
-      - name: 构建单文件
+      - name: 构建两个产物
         run: npm run build
 
       - name: 检查产物
         run: |
           set -eu
-          test -f _worker.js || { echo "::error::没有生成 _worker.js"; exit 1; }
-          echo "=== 产物形态 ==="
-          if grep -qE '^[[:space:]]*import[[:space:]]' _worker.js; then
-            echo "::error::_worker.js 里残留 import 语句，无法在 Dashboard 直接粘贴"; exit 1
+          for f in _worker.min.js _worker.js; do
+            test -f "$f" || { echo "::error::没有生成 $f"; exit 1; }
+            echo "=== $f 形态 ==="
+            if grep -qE '^[[:space:]]*import[[:space:]]' "$f"; then
+              echo "::error file=$f::残留 import 语句，无法在 Dashboard 直接粘贴"; exit 1
+            fi
+            if grep -q 'sourceMappingURL' "$f"; then
+              echo "::error file=$f::残留 sourcemap 引用"; exit 1
+            fi
+            if ! grep -q 'export' "$f"; then
+              echo "::error file=$f::缺少 export"; exit 1
+            fi
+            if ! grep -q 'CMLiussss' "$f"; then
+              echo "::error file=$f::缺少上游版权声明（MIT 要求保留）"; exit 1
+            fi
+            echo "大小：$(wc -c < "$f") 字节 / $(wc -l < "$f") 行"
+          done
+
+          # 压缩版必须真的比源码版小，否则说明 --min 没生效
+          min=$(wc -c < _worker.min.js)
+          src=$(wc -c < _worker.js)
+          if [ "$min" -ge "$src" ]; then
+            echo "::error::_worker.min.js ($min 字节) 没有比 _worker.js ($src 字节) 小，压缩可能失效"
+            exit 1
           fi
-          if grep -q 'sourceMappingURL' _worker.js; then
-            echo "::error::_worker.js 里残留 sourcemap 引用"; exit 1
-          fi
-          if ! grep -q 'export' _worker.js; then
-            echo "::error::_worker.js 缺少 export"; exit 1
-          fi
-          if ! grep -q 'CMLiussss' _worker.js; then
-            echo "::error::_worker.js 缺少上游版权声明（MIT 要求保留）"; exit 1
-          fi
-          echo "大小：$(wc -c < _worker.js) 字节 / $(wc -l < _worker.js) 行"
+          echo "压缩效果：$src → $min 字节（省 $((src - min)) 字节）"
 
       - name: 与源码行为比对
         run: npm run test:build
@@ -102,7 +115,7 @@ jobs:
         run: |
           set -eu
           # 产物没变就什么都不做，避免产生空提交
-          if git diff --quiet -- _worker.js; then
+          if git diff --quiet -- _worker.min.js _worker.js; then
             echo "构建产物与仓库中一致，无需回填。"
             exit 0
           fi
@@ -110,7 +123,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add _worker.js
-          git commit -m "chore: 自动构建 _worker.js（v$VERSION）[skip build]"
+          git add _worker.min.js _worker.js
+          git commit -m "chore: 自动构建 _worker.min.js 与 _worker.js（v$VERSION）[skip build]"
           git push origin HEAD:main
-          echo "已回填 _worker.js（v$VERSION）"
+          echo "已回填两个产物（v$VERSION）"

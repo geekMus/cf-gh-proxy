@@ -11,7 +11,7 @@
 | 方式 | 适合谁 | 要做的事 | 耗时 |
 |---|---|---|---|
 | [A. 一键部署](#方式-a一键部署推荐) | 只想有个能用的加速地址 | 点一个按钮，授权 GitHub | 约 1 分钟 |
-| [B. 粘贴单文件](#方式-b粘贴单文件不克隆仓库) | 想最快、不想让 Cloudflare 碰仓库 | 复制 `_worker.js` 全文粘进 Dashboard | 约 2 分钟 |
+| [B. 粘贴单文件](#方式-b粘贴单文件不克隆仓库) | 想最快、不想让 Cloudflare 碰仓库 | 复制 `_worker.min.js` 全文粘进 Dashboard | 约 2 分钟 |
 | [C. 改代码](#方式-c改代码用-wrangler) | 想改功能、跑测试 | `git clone` + `npm run deploy` | 约 5 分钟 |
 
 ### 方式 A：一键部署（推荐）
@@ -27,7 +27,7 @@
 
 部署完你会得到一个 `https://<worker名>.<你的子域>.workers.dev` 地址，直接可用。
 
-**这个按钮背后做了什么**：Cloudflare 用 Workers Builds 从你克隆出来的仓库构建部署 —— 它读 `wrangler.toml` 和 `package.json`，走本仓库自定义的 `deploy` 脚本（先 `node scripts/build.mjs` 打包成 `_worker.js`，再 `wrangler deploy --main _worker.js`）。所以线上跑的和 `_worker.js` 是同一份字节。
+**这个按钮背后做了什么**：Cloudflare 用 Workers Builds 从你克隆出来的仓库构建部署 —— 它读 `wrangler.toml` 和 `package.json`，走本仓库自定义的 `deploy` 脚本（先 `node scripts/build.mjs --min` 打包成 `_worker.min.js`，再 `wrangler deploy --main _worker.min.js`）。所以线上跑的和 `_worker.min.js` 是同一份字节。
 
 **注意**：一键部署是「一次性快照」——它给你的是一个独立仓库，之后本仓库更新了不会自动同步过去。想跟上更新，用下面「粘单文件」那条路（永远取最新构建产物），或者在你克隆出来的仓库里手动 `git pull upstream main`。
 
@@ -36,10 +36,10 @@
 单文件地址：
 
 ```
-https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.js
+https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.min.js
 ```
 
-也可以直接看 GitHub 上的 [`_worker.js`](../_worker.js)。
+也可以直接看 GitHub 上的 [`_worker.min.js`](../_worker.min.js)。
 
 步骤：
 
@@ -51,9 +51,9 @@ https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.js
 
 配环境变量：Settings → Variables and Secrets，全部可选，见下文 [配置](#配置)。
 
-`_worker.js` 是自动构建的产物：每次 `src/` 有变动，GitHub Actions 会重新构建并**自动提交回 `main`**。所以你打开链接看到的永远是最新代码，不用自己构建。
+`_worker.min.js` 是自动构建的产物：每次 `src/` 有变动，GitHub Actions 会重新构建并**自动提交回 `main`**。所以你打开链接看到的永远是最新代码，不用自己构建。
 
-> 如果你的网络访问 `raw.githubusercontent.com` 不稳定，可以用 GitHub 页面下载：仓库主页 → `_worker.js` → 右上角 **Raw** 按钮，效果一样。
+> 如果你的网络访问 `raw.githubusercontent.com` 不稳定，可以用 GitHub 页面下载：仓库主页 → `_worker.min.js` → 右上角 **Raw** 按钮，效果一样。
 
 ### 方式 C：改代码（用 wrangler）
 
@@ -78,7 +78,7 @@ npx wrangler login          # 首次需要
 npm run deploy              # 先构建单文件，再部署它
 ```
 
-`npm run deploy` 部署的是 `_worker.js`（构建产物），不是 `src/`。这样**线上跑的和别人复制粘贴的是同一份字节**，不会出现「仓库能跑、单文件不能跑」的偏差。
+`npm run deploy` 部署的是 `_worker.min.js`（压缩构建产物），不是 `src/`。这样**线上跑的和别人复制粘贴的是同一份字节**，不会出现「仓库能跑、单文件不能跑」的偏差。
 
 部署完 `wrangler` 会打印一个 `*.workers.dev` 地址，直接可用。想绑自己的域名，在 `wrangler.toml` 里打开 `[[routes]]` 那一段。
 

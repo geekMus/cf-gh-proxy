@@ -8,3 +8,10 @@ dist/
 .DS_Store
 Thumbs.db
 _cmsg.txt
+
+# 设计 skill 的产出：截图、裁剪图、report.json 都是本机跑出来的中间物，
+# 不进仓库（体积大、且和具体机器/浏览器版本绑定）。只保留 notes.md 与 direction.json。
+.taste-skill/shots/
+.taste-skill/light/
+.taste-skill/crop-*.png
+.taste-skill/*.json.bak

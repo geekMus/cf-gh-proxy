@@ -109,11 +109,25 @@ async function route(request, env, ctx) {
   }
 
   // ---- 5. favicon -------------------------------------------------------
+  // 注意：这里对外部站点发 fetch，网络抖动、上游 5xx、被墙都可能让 fetch 抛异常。
+  // 图标丢了不算错误，绝不能因此把请求打成 500（那会变成线上的 1101）。
+  // 所以整段包 try，任何失败都退化成 204（浏览器就继续用缓存或默认图标）。
   if (url.pathname.toLowerCase() === `${cfg.prefix.replace(/\/$/, '')}/favicon.ico`) {
-    const light = 'https://github.githubassets.com/favicons/favicon.png'
-    const dark = 'https://github.githubassets.com/favicons/favicon-dark.png'
-    const preferLight = request.headers.get('sec-ch-prefers-color-scheme') === 'light'
-    return fetch(preferLight ? light : dark, { cf: { cacheTtl: 86400 } })
+    try {
+      const light = 'https://github.githubassets.com/favicons/favicon.png'
+      const dark = 'https://github.githubassets.com/favicons/favicon-dark.png'
+      const preferLight = request.headers.get('sec-ch-prefers-color-scheme') === 'light'
+      const res = await fetch(preferLight ? light : dark, { cf: { cacheTtl: 86400 } })
+      if (res.ok) {
+        return res
+      }
+    } catch {
+      // 落到下面的 204
+    }
+    return new Response(null, {
+      status: 204,
+      headers: { 'cache-control': 'public, max-age=86400' },
+    })
   }
 
   // ---- 6. 首页 -----------------------------------------------------------

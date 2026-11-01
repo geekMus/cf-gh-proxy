@@ -27,11 +27,19 @@ https://gh.example.com/https://github.com/owner/repo/releases/download/v1.0.0/ap
 
 ### 不想点按钮？粘单文件
 
-打开 [`_worker.js`](_worker.js)（或 raw 地址 `https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.js`），
+打开 [`_worker.min.js`](_worker.min.js)（或 raw 地址 `https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.min.js`），
 全选复制 → [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Create** → **Worker**
 → 命名 → **Deploy** → **Edit code** → 删掉默认内容、粘贴 → 右上角 **Deploy**。
 
-`_worker.js` 是自动构建的单文件产物，每次 `src/` 变动由 CI 重新构建并提交回 `main`，所以看到的永远是最新代码。
+两个产物都是 CI 自动构建的，每次 `src/` 变动重新构建并提交回 `main`：
+
+| 文件 | 用途 | 大小 |
+|---|---|---|
+| `_worker.min.js` | **部署用这个**。压缩过，执行逻辑与源码版完全一致 | 57 KB（gzip 17 KB） |
+| `_worker.js` | 给人看的：可读、带注释，想审计或改一行就看它 | 66 KB（gzip 19 KB） |
+
+> 两个产物实测性能差异在 ±5% 噪声内（`npm run bench` 可复现），压缩只减小体积、不改执行逻辑。
+> 本项目**不做混淆**——混淆会引入字符串数组查表与控制流间接，那是真的变慢。
 
 ---
 
@@ -56,10 +64,10 @@ https://gh.example.com/owner/repo/releases/download/v1.0.0/app.zip
 
 ## 验证部署
 
-拿一个真实存在的文件试（这里用本仓库自己的 `_worker.js`）：
+拿一个真实存在的文件试（这里用本仓库自己的 `_worker.min.js`）：
 
 ```bash
-curl -sI "https://gh.example.com/https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.js"
+curl -sI "https://gh.example.com/https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/_worker.min.js"
 ```
 
 三个关键点：状态码 **200**（不是 302）、`content-type: text/plain` 或 `application/octet-stream`（不是 text/html）、**没有 set-cookie**。
