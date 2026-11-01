@@ -963,6 +963,8 @@ h1{
   opacity:0;transition:opacity .2s ease;
 }
 .ui-tip.show{opacity:1}
+.ui-tip a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+.ui-tip a:hover{color:var(--ink)}
 
 /* 三个示例：做成安静的文字按钮而不是一排方框——这一屏的主角只有一个（输入栏），
    示例再用边框框起来就会和它抢视线。保留 32px 的可点高度，比纯文字链接好按。 */
@@ -1238,8 +1240,17 @@ ${THEME_CYCLE}
   var PREFIX=${prefixJson};
   var busy=false;
 
-  function showTip(msg){
+  function showTip(msg,openUrl){
     tip.textContent=msg;
+    if(openUrl){
+      // 兜底入口：用 <a target="_blank"> 而不是再 window.open——
+      // 用户点链接本身就是手势，不会被弹窗拦截器拦掉。
+      var a=document.createElement('a');
+      a.href=openUrl; a.target='_blank'; a.rel='noopener noreferrer';
+      a.textContent='点这里打开';
+      tip.appendChild(document.createTextNode(' '));
+      tip.appendChild(a);
+    }
     tip.classList.add('show');
   }
   function hideTip(){ tip.classList.remove('show'); tip.textContent=''; }
@@ -1291,7 +1302,7 @@ ${THEME_CYCLE}
     var pending=openBlank();
     if(!pending){
       busy=false; go.removeAttribute('disabled');
-      showTip('浏览器拦下了新标签页：允许本站弹窗，或按住 Ctrl 再点「加速」');
+      showTip('浏览器拦下了新标签页：允许本站弹窗后再点一次，或者', target);
       input.focus();
       return;
     }

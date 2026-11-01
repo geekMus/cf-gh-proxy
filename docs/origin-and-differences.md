@@ -44,7 +44,7 @@ jsproxy         ────┘         (MIT, CMLiussss)
 | 死代码 | `exp4` 分支永远到不了（前面已被吃掉），分支上的 jsDelivr 重定向失效 | `JSDELIVR` 是真正生效的配置 |
 | 响应头 | 原样透传（含 `Set-Cookie`、CSP、Cloudflare/Azure 内部头） | 剥掉不该透传的，保留 `content-type` / `content-range` / `etag`；代理响应一律补 `access-control-allow-origin: *`（说明页与 favicon 是自家页面，不加） 等 |
 | 代码组织 | 单个 480 行 `worker.js`，含内嵌 HTML | `src/` 分 6 个模块 + `test/` 99 个测试 |
-| 页面 | 单套暗色配色，无主题切换 | 亮色 / 暗色 / 跟随系统三态，零外部资源，一屏之内，首页 gzip 约 7.5 KB |
+| 页面 | 单套暗色配色，无主题切换 | 亮色 / 暗色 / 跟随系统三态，零外部资源，一屏之内，首页 gzip 约 7.6 KB |
 | 异常兜底 | 无，抛出异常即 Cloudflare 1101 空白页 | `fetch` 外层 `try/catch` → 500 + 可读原因 |
 
 ### 许可证
