@@ -5,7 +5,7 @@
 ## 开发
 
 ```bash
-npm test                # 96 个单元测试，纯桩无网络
+npm test                # 99 个单元测试，纯桩无网络
 npm run check           # 语法检查（六个模块逐个 node --check）
 npm run build           # 构建两个产物：_worker.min.js + _worker.js
 npm run test:build      # 验证两个产物与源码行为一致（40 项断言）
