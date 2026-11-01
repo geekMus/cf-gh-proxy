@@ -348,9 +348,9 @@ test('robots.txt 是允许抓取，不是把 /robots.txt 当资源路径拒绝',
   assert.match(text, /Allow: \//)
 })
 
-test('首页带缓存头与页面安全头（代理回来的文件不带这些）', async () => {
+test('首页明确不入缓存（页面要跟着部署走），安全头照旧', async () => {
   const res = await worker.fetch(new Request('https://gh.test/'), {}, { waitUntil() {} })
-  assert.match(res.headers.get('cache-control') || '', /s-maxage=3600/, '首页应允许边缘缓存')
+  assert.equal(res.headers.get('cache-control'), 'no-store', '首页不缓存：边缘缓存会把新部署挡在门外')
   assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
   assert.equal(res.headers.get('x-frame-options'), 'DENY')
   assert.match(res.headers.get('strict-transport-security') || '', /max-age=31536000/)

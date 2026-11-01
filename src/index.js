@@ -40,9 +40,11 @@ const PAGE_HEADERS = {
   'strict-transport-security': 'max-age=31536000; includeSubDomains',
 }
 
-// 首页是可缓存的静态页：内容只随部署变化，没必要每个访客都回源一次。
-// s-maxage 给边缘，max-age 给浏览器；`?check=` 那类请求另有 no-store。
-const LANDING_CACHE = 'public, max-age=300, s-maxage=3600'
+// 首页**不**进缓存：它是一份随部署变化的 HTML，边缘缓存会把新版本挡在门外。
+// 实测踩过：`public, max-age=300, s-maxage=3600` 被 zone 的 Browser Cache TTL
+// 改写成 `max-age=14400`，于是线上首页带着 `Age: 1059` 一直发旧版本，
+// 部署完一小时都看不到新页面。改成 `no-store` 之后每次都由 Worker 现生成
+// （渲染只是几毫秒的字符串拼接，这点 CPU 完全不值得用「发旧页面」去换）。
 
 const PREFLIGHT = {
   status: 204,
@@ -240,34 +242,10 @@ function renderHome(cfg, url, ctx) {
     return htmlResponse(renderDisguise())
   }
   const html = renderLanding(cfg, url ? url.origin : '')
-  return cachedHtml(cfg, url, ctx, html)
-}
-
-/**
- * 说明页是纯静态的（只依赖 prefix），但默认不会被 CF 的边缘缓存接住——
- * 每条 HTML 请求都要真的跑到 Worker。这里显式写进 Cache API：第一个访客
- * 之后，同一个 PoP 上的后续请求直接命中边缘，TTFB 从「绕一圈」变成几毫秒。
- *
- * 只在 GET 且带 ctx 时读写；Node 预览里没有 `caches`，`typeof` 兜住。
- */
-async function cachedHtml(cfg, url, ctx, html) {
-  const headers = {
-    'content-type': 'text/html; charset=UTF-8',
-    ...PAGE_HEADERS,
-    'cache-control': LANDING_CACHE,
-  }
-  const cache = typeof caches !== 'undefined' && caches.default ? caches.default : null
-  if (!cache || !url || !ctx || typeof ctx.waitUntil !== 'function') {
-    return new Response(html, { status: 200, headers })
-  }
-
-  const key = new Request(`${url.origin}${cfg.prefix}`, { method: 'GET' })
-  const hit = await cache.match(key)
-  if (hit) return hit
-
-  const res = new Response(html, { status: 200, headers })
-  ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}))
-  return res
+  return new Response(html, {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=UTF-8', ...PAGE_HEADERS, 'cache-control': 'no-store' },
+  })
 }
 
 /**
