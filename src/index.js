@@ -313,7 +313,7 @@ function badRequest(request, cfg, reason) {
   if (!wantsHtml) {
     return textResponse(`不是可加速的 GitHub 文件：${reason}`, 400)
   }
-  return new Response(renderErrorPage(cfg, reason), {
+  return new Response(renderErrorPage(cfg, reason, new URL(request.url).origin), {
     status: 400,
     headers: { 'content-type': 'text/html; charset=UTF-8', ...PAGE_HEADERS, ...CORS_HEADERS },
   })

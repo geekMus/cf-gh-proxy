@@ -160,6 +160,20 @@ test('错误页：有返回首页的链接', () => {
   assert.match(html, /回到首页重新输入/)
 })
 
+test('错误页：正确形态用的是真实域名，不是 your-domain 占位符', () => {
+  const html = renderErrorPage(CFG, 'x', 'https://gh.example.com')
+  assert.ok(
+    html.includes('https://gh.example.com/https://github.com/owner/repo/releases/download/v1.0.0/app.zip'),
+    '示例应当拼上当前请求的 origin'
+  )
+  assert.ok(!html.includes('your-domain'), '有 origin 时不该再出现占位符')
+})
+
+test('错误页：拿不到 origin 时退回占位符（别拼出半个 URL）', () => {
+  const html = renderErrorPage(CFG, 'x')
+  assert.ok(html.includes('https://your-domain/https://github.com/owner/repo/'))
+})
+
 // ---------------------------------------------------------------------------
 // 4. ?check= 接口
 // ---------------------------------------------------------------------------

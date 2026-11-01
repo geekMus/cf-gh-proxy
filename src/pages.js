@@ -386,12 +386,17 @@ function renderPathTable() {
 /**
  * 示例里「服务地址」那一截。
  *
- * 关键细节：prefix 是 `/` 时必须补一个结尾斜杠，否则拼出来是
- * `https://your-domainhttps://github.com/...` —— 两个 URL 连成一片，
+ * 用调用方传进来的 origin——也就是这个 Worker 真实被访问的域名，
+ * 而不是 `https://your-domain` 这种占位符：用户照抄示例时不用替换任何东西。
+ * 只有拿不到 origin 时才退回占位（测试里直接调用 `renderErrorPage(cfg, reason)`）。
+ *
+ * 另一个关键细节：prefix 是 `/` 时必须补一个结尾斜杠，否则拼出来是
+ * `https://gh.example.comhttps://github.com/...` —— 两个 URL 连成一片，
  * 用户会以为要这么写（实测第一版就是这样）。
  */
-function exampleBaseOf(prefix) {
-  return `https://your-domain${prefix === '/' ? '/' : prefix}`
+function exampleBaseOf(prefix, origin = '') {
+  const base = origin || 'https://your-domain'
+  return `${base}${prefix === '/' ? '/' : prefix}`
 }
 
 /** 首页那块真实界面：粘链接 → 问 ?check= → 跳转。整页只有这一件事。 */
@@ -611,10 +616,12 @@ ${THEME_CYCLE}
  *
  * @param {ReturnType<import('./config.js').resolveConfig>} cfg
  * @param {string} reason 具体原因（由 validate.js 产出）
+ * @param {string} [origin] 这个 Worker 真实被访问的地址（如 `https://gh.example.com`）。
+ *   传了就把它拼进「正确形态」示例里，用户照抄即可；不传（测试）退回占位符。
  */
-export function renderErrorPage(cfg, reason) {
+export function renderErrorPage(cfg, reason, origin = '') {
   const prefix = cfg.prefix
-  const exampleBase = exampleBaseOf(prefix)
+  const exampleBase = exampleBaseOf(prefix, origin)
   const home = `${prefix}`
   const ex = `${exampleBase}https://github.com/owner/repo/releases/download/v1.0.0/app.zip`
 
