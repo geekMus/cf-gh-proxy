@@ -62,12 +62,13 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 | 亮色 / 暗色 / 跟随系统 | `data-theme="auto"` 默认；`prefers-color-scheme` 负责跟随系统，`:root[data-theme=dark]` 负责显式选择 |
 | 不闪白 | 主题在 `<head>` 里同步落定（读 `localStorage('cfgh.theme')` 后立刻 `setAttribute`），不等 DOM 解析完 |
 | 不跑 JS 也不错乱 | 主题按钮的图标与文字由 CSS 按 `:root[data-theme]` 选择，JS 失效时仍显示正确状态 |
-| 体积 | 首页 21.2 KB，一屏之内 |
+| 体积 | 首页 20.5 KB，一屏之内 |
 | 仓库入口 | 右上角一枚 GitHub 图标（桌面端 40×40、640px 以下 36×36，与主题按钮同高、同描边），地址**写死**在 `src/pages.js` 的 `REPO_URL`，不做成环境变量；页面底部不放任何东西，所以全页外链只有这一个 |
-| 版本号 | 右下角一行 13px 小字（`v1.2.11`），右边缘与顶栏图标对齐。它是元信息不是身份，所以不进顶栏——390px 上顶栏要放品牌 + 仓库图标 + 主题按钮，再加版本号会挤。常量在 `src/pages.js` 的 `VERSION`，与 `package.json` 的一致性由测试守着 |
+| 版本号 | 右下角一行 13px 小字（`v1.2.15`），右边缘与顶栏图标对齐。它是元信息不是身份，所以不进顶栏——390px 上顶栏要放品牌 + 仓库图标 + 主题按钮，再加版本号会挤。常量在 `src/pages.js` 的 `VERSION`，与 `package.json` 的一致性由测试守着 |
 | 图标 | 顶栏 logo 与 favicon 由同一段几何生成：页面 favicon 走 `faviconHref()` 的 data URI，`/favicon.ico` 走 `FAVICON_SVG`，都不发外部请求。logo 那一整块（图标 + 名字）是回首页的链接（错误页上尤其需要），`href` 跟着 `PREFIX` 走 |
 | 背景 | 网格是两层 SVG `data:` 拼的（32px 细线 + 128px 主线），不用 CSS 渐变 |
 | 无障碍 | `:focus-visible` 统一轮廓、`#tip` 带 `role="status" aria-live="polite"`、`prefers-reduced-motion` 关动效 |
+| 示例 | 只有一条：本仓库 `README.md` 的 raw 直链，点一下填进输入框。不放「复制示例」按钮——示例本身就是给人看见的，复制交给浏览器自己的选区与右键；也不放脚本/源码包两条，那一屏只该有一个主角（输入栏） |
 | 响应式 | `clamp()` 字号与内边距；640px 以下输入栏改成上下两行、按钮通栏 |
 | 可被抓取 | `<meta name="robots" content="index,follow">`、`<meta name="description">`、带 origin 时输出 `<link rel="canonical">`；`/robots.txt` 由 Worker 直接回 `Allow: /`（否则它会被当成资源路径走代理校验，抓取方看到的是「拒绝抓取」）。错误页仍是 `noindex`——报错页没有索引价值 |
 | 不缓存 | 首页带 `cache-control: no-store`：这份 HTML 是随部署变化的，实测被 zone 的 Browser Cache TTL 改写成 `max-age=14400` 后，线上首页带着 `Age: 1059` 一直发旧版本，部署完一小时都看不到新页面。渲染只是几毫秒的字符串拼接，不值得用「发旧页面」去换那点缓存 |

@@ -108,15 +108,21 @@ test('顶栏：logo 的 href 跟着 PREFIX 走（挂在 /gh/ 下就回 /gh/）',
   assert.match(renderErrorPage(prefixed, 'x'), /<a class="home" href="\/gh\/"/)
 })
 
-test('首页：有输入框、加速按钮、清空按钮、复制按钮', () => {
+test('首页：有输入框、加速按钮、清空按钮；示例只有一个 raw 直链、没有复制按钮', () => {
   const html = renderLanding(CFG)
   assert.match(html, /id="q"/)
   assert.match(html, /id="go"/)
   assert.match(html, /id="clear"/)
-  assert.match(html, /id="copy"/)
+  // 示例：只留一条 README.md 的 raw 直链
+  const exs = [...html.matchAll(/data-ex="([^"]+)"/g)].map((m) => m[1])
+  assert.deepEqual(exs, ['https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/README.md'])
+  // 输入框的占位符与示例一致，用户一眼能照着改
+  assert.match(html, /placeholder="https:\/\/raw\.githubusercontent\.com\/geekMus\/cf-gh-proxy\/main\/README\.md"/)
+  // 复制示例按钮已去掉
+  assert.doesNotMatch(html, /id="copy"/)
+  assert.doesNotMatch(html, /复制示例/)
   // 无障碍：按钮必须有可读标签
   assert.match(html, /aria-label="清空输入"/)
-  assert.match(html, /aria-label="复制示例"/)
 })
 
 test('首页：提示区带 role=status 与 aria-live（屏幕阅读器能听到校验结果）', () => {

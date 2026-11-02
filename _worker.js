@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.14 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.15 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -918,6 +918,9 @@ h1{
   font:inherit;font-size:15px;
 }
 #q::placeholder{color:var(--muted);opacity:.7}
+/* 清空按钮只在有内容时出现，所以空着的时候右边不用留 40px——
+   示例占位符（README.md 的 raw 直链）刚好能整条露出来。 */
+.ui-field:not(.has-value) #q{padding-right:12px}
 #q:focus{outline:none}
 #clear{
   position:absolute;top:50%;right:4px;transform:translateY(-50%);
@@ -966,10 +969,6 @@ h1{
   transition:color .18s ease,text-decoration-color .18s ease;
 }
 .ex button:hover{color:var(--accent);text-decoration-color:var(--accent)}
-#copy{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--muted)}
-#copy svg{flex:0 0 auto}
-#copy:hover{color:var(--accent)}
-#copy[data-done]{color:var(--ok)}
 
 /* ---- 页脚：已移除。仓库入口挪到右上角，页面底部只留空白 ---------------- */
 
@@ -1114,7 +1113,7 @@ export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
 // 版本号只在「页面右下角」露一次：它是元信息，不是身份，和顶栏的品牌不是一回事；
 // 放顶栏会在 390px 上跟主题按钮抢位置。改版本时这里和 package.json 要一起改，
 // 测试会核对两者一致（见 test/pages.test.js）。
-export const VERSION = '1.2.14'
+export const VERSION = '1.2.15'
 
 // 右下角那行小字。放在 .stage 之后：.stage 有 flex:1，于是它自然贴在视口底部，
 // 右边缘与顶栏图标对齐，不占中间的操作区。
@@ -1174,7 +1173,7 @@ function renderCore(prefix) {
       <p class="lede anim d1">把 release 资产、源码包或单个文件的地址丢进来，走这条链接直接下。</p>
       <div class="bar anim d2" data-ui>
         <div class="ui-field" id="field">
-          <input type="text" id="q" placeholder="https://github.com/geekMus/cf-gh-proxy/blob/main/_worker.min.js" autocomplete="off" spellcheck="false" autocapitalize="off" enterkeyhint="go" aria-describedby="tip" aria-label="GitHub 链接">
+          <input type="text" id="q" placeholder="https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/README.md" autocomplete="off" spellcheck="false" autocapitalize="off" enterkeyhint="go" aria-describedby="tip" aria-label="GitHub 链接">
           <button id="clear" type="button" aria-label="清空输入" tabindex="-1">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
           </button>
@@ -1187,13 +1186,7 @@ function renderCore(prefix) {
       <p class="ui-tip" id="tip" role="status" aria-live="polite"></p>
       <div class="ex anim d3" id="exs">
         <span class="lbl">试试</span>
-        <button type="button" data-ex="https://github.com/geekMus/cf-gh-proxy/blob/main/_worker.min.js">本项目脚本</button>
-        <button type="button" data-ex="https://github.com/geekMus/cf-gh-proxy/archive/refs/heads/main.zip">源码包</button>
-        <button type="button" data-ex="https://github.com/geekMus/cf-gh-proxy/raw/main/_worker.min.js">raw 直链</button>
-        <button id="copy" type="button" aria-label="复制示例">
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8"/><path d="M10.5 5.5v-2A1 1 0 0 0 9.5 2.5h-6A1 1 0 0 0 2.5 3.5v6A1 1 0 0 0 3.5 10.5h2" stroke-linecap="round"/></svg>
-          复制示例
-        </button>
+        <button type="button" data-ex="https://raw.githubusercontent.com/geekMus/cf-gh-proxy/main/README.md">README.md 的 raw 直链</button>
       </div>
     </div>`
 }
@@ -1242,7 +1235,6 @@ ${THEME_CYCLE}
   var field=document.getElementById('field');
   var clearBtn=document.getElementById('clear');
   var exs=document.getElementById('exs');
-  var copyBtn=document.getElementById('copy');
   var PREFIX=${prefixJson};
 
   function showTip(msg,openUrl){
@@ -1342,30 +1334,6 @@ ${THEME_CYCLE}
     if(!b) return;
     input.value=b.getAttribute('data-ex');
     syncClear(); hideTip(); input.focus();
-  });
-
-  // 复制：有输入就复制输入，没有就复制第一个示例。
-  // 优先 clipboard API，退回到 select + execCommand（http 下 clipboard 不可用）
-  function copyText(text){
-    if(navigator.clipboard&&navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(flash,fallback);
-    } else { fallback(); }
-    function fallback(){
-      var t=document.createElement('textarea');
-      t.value=text; t.style.position='fixed'; t.style.opacity='0';
-      document.body.appendChild(t); t.select();
-      try{ document.execCommand('copy'); flash(); }catch(e){}
-      document.body.removeChild(t);
-    }
-    function flash(){
-      copyBtn.setAttribute('data-done','1');
-      setTimeout(function(){ copyBtn.removeAttribute('data-done'); },1400);
-    }
-  }
-  copyBtn.addEventListener('click',function(){
-    var v=(input.value||'').trim();
-    copyText(v||'https://github.com/geekMus/cf-gh-proxy/blob/main/_worker.min.js');
-    if(!v){ input.focus(); }
   });
 
   syncClear();
