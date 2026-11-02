@@ -68,7 +68,7 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 | 图标 | 顶栏 logo 与 favicon 由同一段几何生成：页面 favicon 走 `faviconHref()` 的 data URI，`/favicon.ico` 走 `FAVICON_SVG`，都不发外部请求。logo 那一整块（图标 + 名字）是回首页的链接（错误页上尤其需要），`href` 跟着 `PREFIX` 走 |
 | 背景 | 网格是两层 SVG `data:` 拼的（32px 细线 + 128px 主线），不用 CSS 渐变 |
 | 无障碍 | `:focus-visible` 统一轮廓、`#tip` 带 `role="status" aria-live="polite"`、`prefers-reduced-motion` 关动效 |
-| 示例 | 只有一条：本仓库 `README.md` 的 raw 直链，点一下填进输入框。不放「复制示例」按钮——示例本身就是给人看见的，复制交给浏览器自己的选区与右键；也不放脚本/源码包两条，那一屏只该有一个主角（输入栏） |
+| 示例 | 只有一条 **raw 直链**（指向本仓库的 `README.md`），点一下填进输入框；标签就叫「raw 直链」，不写长文件名——那是按钮，不是文档标题。不放「复制示例」按钮：示例本身就摆在屏幕上，复制交给浏览器自己的选区与右键；也不放脚本/源码包两条，那一屏只该有一个主角（输入栏） |
 | 响应式 | `clamp()` 字号与内边距；640px 以下输入栏改成上下两行、按钮通栏 |
 | 可被抓取 | `<meta name="robots" content="index,follow">`、`<meta name="description">`、带 origin 时输出 `<link rel="canonical">`；`/robots.txt` 由 Worker 直接回 `Allow: /`（否则它会被当成资源路径走代理校验，抓取方看到的是「拒绝抓取」）。错误页仍是 `noindex`——报错页没有索引价值 |
 | 不缓存 | 首页带 `cache-control: no-store`：这份 HTML 是随部署变化的，实测被 zone 的 Browser Cache TTL 改写成 `max-age=14400` 后，线上首页带着 `Age: 1059` 一直发旧版本，部署完一小时都看不到新页面。渲染只是几毫秒的字符串拼接，不值得用「发旧页面」去换那点缓存 |
