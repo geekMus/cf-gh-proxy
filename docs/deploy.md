@@ -148,6 +148,8 @@ curl -sI "https://gh.mus.pp.ua/https://github.com/geekMus/container-autoupdate/r
 
 只对 **tag 或 commit SHA** 生效，**分支名一律不改写**——jsDelivr 对分支的缓存很激进，分支更新后它还会继续吐旧内容（实测踩过：同一个 URL 返回的是上一版文件）。release 资产和源码打包也不改写，jsDelivr 不支持。
 
+「tag」这一条还有更细的限制：只认 **semver 形态的 tag**（`v1.2.3`、`1.2.3`，可带 `-rc.1` 这类后缀）和 **7–40 位十六进制 SHA**（`abcdef1`、完整 40 位）。`1.x`、`2024-fix` 这种名字看着像 tag，但不是 semver，会被与分支同等对待——不改写、照常走 `raw.githubusercontent.com`。结果是对的，只是省不到那点出口流量。
+
 ---
 
 返回 [README](../README.md)。

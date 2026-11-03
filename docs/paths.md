@@ -9,12 +9,17 @@
 | release 资产 | `github.com/o/r/releases/download/v1.0.0/app.zip` |
 | 最新 release | `github.com/o/r/releases/latest/download/app.zip` |
 | 源码打包 | `github.com/o/r/archive/refs/heads/main.zip`、`github.com/o/r/archive/v1.0.0.tar.gz` |
+| 源码打包落点 | `codeload.github.com/o/r/zip/refs/heads/main`（`/archive/…` 会 302 到这里，由 Worker 内部跟完，客户端看不到这一跳；也接受 `tar.gz` / `legacy.zip` / `legacy.tar.gz`） |
 | 分支/提交里的文件 | `github.com/o/r/raw/main/x.sh`、`github.com/o/r/blob/main/x.sh` |
 | raw 直链 | `raw.githubusercontent.com/o/r/main/x.sh` |
+| 签名资产直链 | `release-assets.githubusercontent.com/…`、`objects.githubusercontent.com/…`（GitHub 自己签发的下载地址，只要求路径非空、且路径里不再嵌一个 URL） |
+| 静态资源 | `github.githubassets.com/…`、`avatars.githubusercontent.com/…`、`user-images.githubusercontent.com/…`、`private-user-images.githubusercontent.com/…` |
 | Gist | `gist.githubusercontent.com/user/id/raw/x.txt`；`gist.github.com/user/id/raw`（**不带 `/raw` 的 gist 网页会被拒**） |
 | API | `api.github.com/...` |
 
 其中 `/blob/` 是 GitHub 的**网页**（返回渲染好的 HTML，不是文件字节），Worker 会自动改写成 `raw.githubusercontent.com` 再取，所以 `blob` 链接也能拿到原始文本。
+
+主机白名单一共 12 个，就是上表里出现过的这些（代码里的 `ALLOWED_HOSTS`）。其中签名资产与静态资源那 6 个主机只接受**已经写完整**的 URL、不做 `https://github.com/` 补全（代码里的 `HOSTS_REQUIRING_FULL_URL`）——它们本来就是 GitHub 临时签发的地址，猜前缀只会猜错。
 
 链接要写完整，包含 `https://github.com/`：
 
@@ -43,6 +48,7 @@ https://gh.example.com/https://github.com/o/r/releases/download/v1.0.0/app.zip
 | `github.com/owner/repo/archive/v1.0.0` | 缺 `.zip` / `.tar.gz` 扩展名 |
 | `github.com/owner/repo/raw/main` | 缺文件名 |
 | `example.com/...`、`evil.com/https://github.com/...` | 非 GitHub 域名 |
+| `release-assets.githubusercontent.com/https://evil.com/x` | 签名资产域名的路径里嵌了另一个 URL，有借道嫌疑 |
 
 错误响应分两种形态：浏览器（`Accept` 含 `text/html`）给一页可读的说明，含具体原因与正确示例；`curl` / `wget` 给一行纯文本，方便脚本 grep。
 

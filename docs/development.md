@@ -11,7 +11,7 @@ npm run build           # 构建两个产物：_worker.min.js + _worker.js
 npm run test:build      # 验证两个产物与源码行为一致（40 项断言）
 npm run bench           # 两个产物的性能基准（冷启动 / 吞吐 / 体积）
 npm run verify          # 全套：语法 + 单测 + 构建 + 等价性
-node scripts/live-check.mjs   # 真机联调（需联网，31 项断言）
+node scripts/live-check.mjs   # 真机联调（需联网，33 项断言）
 node scripts/check-disguise.mjs  # 伪装页三变量组合（12 项断言）
 node scripts/check-workflow.cjs  # 校验 CI 配置本身（40 项断言）
 npx wrangler tail       # 看线上实时日志
@@ -62,9 +62,9 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 | 亮色 / 暗色 / 跟随系统 | `data-theme="auto"` 默认；`prefers-color-scheme` 负责跟随系统，`:root[data-theme=dark]` 负责显式选择 |
 | 不闪白 | 主题在 `<head>` 里同步落定（读 `localStorage('cfgh.theme')` 后立刻 `setAttribute`），不等 DOM 解析完 |
 | 不跑 JS 也不错乱 | 主题按钮的图标与文字由 CSS 按 `:root[data-theme]` 选择，JS 失效时仍显示正确状态 |
-| 体积 | 首页 19.4 KB，一屏之内 |
+| 体积 | 首页 20.7 KB（21192 字节），一屏之内 |
 | 仓库入口 | 右上角一枚 GitHub 图标（桌面端 40×40、640px 以下 36×36，与主题按钮同高、同描边），地址**写死**在 `src/pages.js` 的 `REPO_URL`，不做成环境变量；页面底部不放任何东西，所以全页外链只有这一个 |
-| 版本号 | 右下角一行 13px 小字（`v1.2.17`），右边缘与顶栏图标对齐。它是元信息不是身份，所以不进顶栏——390px 上顶栏要放品牌 + 仓库图标 + 主题按钮，再加版本号会挤。常量在 `src/pages.js` 的 `VERSION`，与 `package.json` 的一致性由测试守着 |
+| 版本号 | 右下角一行 13px 小字（`v1.2.18`），右边缘与顶栏图标对齐。它是元信息不是身份，所以不进顶栏——390px 上顶栏要放品牌 + 仓库图标 + 主题按钮，再加版本号会挤。常量在 `src/pages.js` 的 `VERSION`，与 `package.json` 的一致性由测试守着 |
 | 图标 | 顶栏 logo 与 favicon 由同一段几何生成：页面 favicon 走 `faviconHref()` 的 data URI，`/favicon.ico` 走 `FAVICON_SVG`，都不发外部请求。logo 那一整块（图标 + 名字）是回首页的链接（错误页上尤其需要），`href` 跟着 `PREFIX` 走 |
 | 背景 | 网格是两层 SVG `data:` 拼的（32px 细线 + 128px 主线），不用 CSS 渐变 |
 | 无障碍 | `:focus-visible` 统一轮廓、`#tip` 带 `role="status" aria-live="polite"`、`prefers-reduced-motion` 关动效 |
@@ -136,7 +136,7 @@ src/
   pages.js              # 说明页 / 错误页 / nginx 伪装页
 test/
   unit.test.js             # 配置、URL、白名单、响应头
-  validate.test.js         # 路径形态校验（21 项，锁死「不代理网页」）
+  validate.test.js         # 路径形态校验（22 项，锁死「不代理网页」）
   redirect.test.js         # 重定向跟随（核心）
   blob-rewrite.test.js     # /blob/ 改写成 raw
   jsdelivr.test.js         # jsDelivr 改写
@@ -147,7 +147,7 @@ scripts/
   check-build.mjs         # 验证两个产物与源码行为一致（40 项）
   check-workflow.cjs      # 校验工作流配置本身（40 项）
   check-disguise.mjs      # 伪装页三变量组合（12 项）
-  live-check.mjs          # 真机联调（需联网，31 项）
+  live-check.mjs          # 真机联调（需联网，33 项）
   bench.mjs               # 两个产物的性能基准
   preview.mjs             # 本地预览（把 Node 请求交给真实 worker.fetch）
 .github/workflows/

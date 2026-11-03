@@ -42,7 +42,7 @@ release-assets.githubusercontent.com/github-production-release-asset/…
 | HEAD | 超时无输出 | **0.34 秒**，200 |
 | 响应头 | 带 `Set-Cookie: _gh_sess` | 无 cookie |
 
-（实测脚本：`node scripts/live-check.mjs`，31 项断言，三轮连跑全过。）
+（实测脚本：`node scripts/live-check.mjs`，33 项断言，三轮连跑全过。）
 
 ### 每次都要重走：不记签名地址，也不缓存
 
