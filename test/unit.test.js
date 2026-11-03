@@ -60,7 +60,7 @@ test('resolveConfig：ALLOW_AUTH 默认关闭', () => {
 // URL 构建
 // ---------------------------------------------------------------------------
 
-test('buildTargetUrl：三种输入形态', () => {
+test('buildTargetUrl：两种输入形态（完整链接 / 不带协议）', () => {
   const full = buildTargetUrl('https://github.com/o/r/releases/download/v1/x.zip')
   assert.equal(full.hostname, 'github.com')
   assert.equal(full.pathname, '/o/r/releases/download/v1/x.zip')
@@ -68,9 +68,8 @@ test('buildTargetUrl：三种输入形态', () => {
   const noScheme = buildTargetUrl('github.com/o/r/releases/download/v1/x.zip')
   assert.equal(noScheme.hostname, 'github.com')
 
-  const bare = buildTargetUrl('o/r/releases/download/v1/x.zip')
-  assert.equal(bare.hostname, 'github.com')
-  assert.equal(bare.pathname, '/o/r/releases/download/v1/x.zip')
+  // 裸 owner/repo 写法从 v1.2.18 起不再支持（owner 名带点会和域名混淆）
+  assert.equal(buildTargetUrl('o/r/releases/download/v1/x.zip'), null)
 })
 
 test('buildTargetUrl：纠正被压扁的协议头', () => {
@@ -95,10 +94,11 @@ test('buildTargetUrl：非法输入返回 null', () => {
   assert.equal(buildTargetUrl('ftp://github.com/o/r'), null)
 })
 
-test('buildTargetUrl：首段含点当域名，不含点当 owner', () => {
+test('buildTargetUrl：首段含点当域名，不含点直接拒掉', () => {
   // `o.r` 这种像域名的会被当域名（真实场景里 owner 名不会带点）
   assert.equal(buildTargetUrl('raw.githubusercontent.com/o/r/main/x').hostname, 'raw.githubusercontent.com')
-  assert.equal(buildTargetUrl('geekMus/container-autoupdate/main/x').hostname, 'github.com')
+  // 裸 owner/repo：不再猜 github.com，直接 null
+  assert.equal(buildTargetUrl('geekMus/container-autoupdate/main/x'), null)
 })
 
 // ---------------------------------------------------------------------------

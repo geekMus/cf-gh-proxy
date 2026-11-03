@@ -91,22 +91,25 @@ test('releases 的网页页面被拒，只放行 download', () => {
 // 3. 真正的文件路径必须放行（不能把功能改坏）
 // ---------------------------------------------------------------------------
 
-test('release 资产放行（含兼容的裸 owner/repo 写法）', () => {
+test('release 资产放行（完整链接与不带协议两种写法）', () => {
   assert.equal(accepted('https://github.com/o/r/releases/download/v1/x.zip'), 'release')
   assert.equal(accepted('github.com/o/r/releases/download/v1/x.zip'), 'release')
-  // 裸 owner/repo 是后端的兼容写法（老调用方还在这么发），文档与页面已不再推荐。
-  assert.equal(accepted('o/r/releases/download/v1/x.zip'), 'release')
   // 资产文件名里带路径分隔也允许（有些项目这么发）
   assert.equal(accepted('https://github.com/o/r/releases/download/v1/sub/x.zip'), 'release')
 })
 
-test('裸写法的歧义：owner 名带点会被当成域名（所以不推荐裸写法）', () => {
-  // 首段含点 → buildTargetUrl 当它是主机名 → 不在白名单 → 被拒。
-  // 这正是「文档只教写完整链接」的原因。
-  const u = buildTargetUrl('owner.name/repo/releases/download/v1/x.zip')
-  assert.ok(u, '应当能解析成一个 URL')
-  assert.equal(u.hostname, 'owner.name')
-  assert.ok(!isAllowedTarget(u), 'owner.name 不是白名单主机，应当被拒')
+test('裸 owner/repo 写法不再支持（v1.2.18 起与前端一致）', () => {
+  // 首段不含点 → 不再猜成 github.com，buildTargetUrl 直接返回 null（400）。
+  assert.equal(buildTargetUrl('o/r/releases/download/v1/x.zip'), null)
+  assert.equal(buildTargetUrl('geekMus/container-autoupdate/main/x'), null)
+  assert.ok(denied('o/r/releases/download/v1/x.zip'))
+
+  // 首段带点的（owner.name/repo/...）仍会被当成主机名，然后卡在白名单这一层。
+  // 两条路都拒绝，这正是「只认完整链接」的原因：同一形态的归属取决于 owner 里有没有点。
+  const dotted = buildTargetUrl('owner.name/repo/releases/download/v1/x.zip')
+  assert.ok(dotted, '首段像域名，仍能解析成 URL')
+  assert.equal(dotted.hostname, 'owner.name')
+  assert.ok(denied('owner.name/repo/releases/download/v1/x.zip'))
 })
 
 test('archive 放行三种写法', () => {

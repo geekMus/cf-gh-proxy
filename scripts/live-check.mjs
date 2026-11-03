@@ -95,11 +95,19 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------
-  console.log('\n[4] 兼容：裸路径仍可用（文档与页面已不再推荐这种写法）')
+  console.log('\n[4] 严格：裸 owner/repo 路径不再被接受（v1.2.18 起，两端都只认完整链接）')
   {
-    const { res } = await callWorker('/geekMus/container-autoupdate/releases/latest/download/container-autoupdate.sh')
-    const buf = Buffer.from(await res.arrayBuffer())
-    ok('状态码 200', res.status === 200, `实际 ${res.status}`)
+    const barePath = '/geekMus/container-autoupdate/releases/latest/download/container-autoupdate.sh'
+    const { res } = await callWorker(barePath)
+    ok('裸路径 → 400', res.status === 400, `实际 ${res.status}`)
+    if (res.status === 400) {
+      const body = await res.text()
+      ok('原因教写完整链接', /github\.com/.test(body), body.slice(0, 80).replace(/\s+/g, ' '))
+    }
+    // 同一个资产的完整链接写法仍然照常下载
+    const { res: r2 } = await callWorker('/https://github.com' + barePath)
+    const buf = Buffer.from(await r2.arrayBuffer())
+    ok('完整链接 → 200', r2.status === 200, `实际 ${r2.status}`)
     ok('字节数正确', buf.length === expectSize, `${buf.length}`)
   }
 

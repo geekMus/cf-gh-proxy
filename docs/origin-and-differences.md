@@ -24,7 +24,7 @@ jsproxy         ────┘         (MIT, CMLiussss)
 - **路由判定**：用几条正则识别 URL 形态，分流到不同处理分支（`releases|archive`、`blob|raw`、`gist`、`tags`、`raw.githubusercontent` 等）
 - **伪装机制**：命中爬虫 UA 时返回 nginx 默认页；`URL` / `URL302` 两个环境变量控制主页伪装
 - **首页形态**：一个可粘贴 GitHub 链接的输入框页面
-- **`?q=` 便捷入口**：把裸链接转成前缀形式
+- **`?q=` 便捷入口**：把 GitHub 链接转成前缀形式
 
 ### 改了什么
 
@@ -43,8 +43,8 @@ jsproxy         ────┘         (MIT, CMLiussss)
 | 模块级状态 | `屏蔽爬虫UA = 屏蔽爬虫UA.concat(...)`，每次请求追加、同 isolate 无限增长 | 每次请求重新解析，无模块级可变状态 |
 | 死代码 | `exp4` 分支永远到不了（前面已被吃掉），分支上的 jsDelivr 重定向失效 | `JSDELIVR` 是真正生效的配置 |
 | 响应头 | 原样透传（含 `Set-Cookie`、CSP、Cloudflare/Azure 内部头） | 剥掉不该透传的，保留 `content-type` / `content-range` / `etag`；代理响应一律补 `access-control-allow-origin: *`（说明页与 favicon 是自家页面，不加） 等 |
-| 代码组织 | 单个 480 行 `worker.js`，含内嵌 HTML | `src/` 分 6 个模块 + `test/` 105 个测试 |
-| 页面 | 单套暗色配色，无主题切换 | 亮色 / 暗色 / 跟随系统三态，零外部资源，一屏之内，首页约 20.6 KB |
+| 代码组织 | 单个 480 行 `worker.js`，含内嵌 HTML | `src/` 分 6 个模块 + `test/` 108 个测试 |
+| 页面 | 单套暗色配色，无主题切换 | 亮色 / 暗色 / 跟随系统三态，零外部资源，一屏之内，首页约 19.4 KB |
 | 异常兜底 | 无，抛出异常即 Cloudflare 1101 空白页 | `fetch` 外层 `try/catch` → 500 + 可读原因 |
 
 ### 许可证

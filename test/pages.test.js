@@ -203,8 +203,8 @@ test('错误页：拿不到 origin 时退回占位符（别拼出半个 URL）',
 })
 
 test('错误页：不再声称「省略 https://github.com/ 也行」', () => {
-  // 文档与错误页统一口径：链接要写完整。裸路径后端仍兼容（老调用方），
-  // 但既然不再推荐，页面就不该再教用户那么写。
+  // 文档与错误页统一口径：链接要写完整。裸路径从 v1.2.18 起前后端都不再接受，
+  // 页面更不该教用户那么写。
   const html = renderErrorPage(CFG, 'x', 'https://gh.example.com')
   assert.ok(!html.includes('省略'), '错误页不该再出现「省略……也行」')
   assert.ok(!/也\s*行。/.test(html), '错误页不该再出现「也行」这种推荐语气')
@@ -224,11 +224,11 @@ test('?check=：合法链接返回 ok:true 与归一后的 href', async () => {
   assert.equal(body.kind, 'release')
 })
 
-test('?check=：裸 owner/repo 路径也能归一', async () => {
+test('?check=：裸 owner/repo 路径不再被接受', async () => {
   const res = await callWorker('/?check=' + encodeURIComponent('o/r/releases/download/v1/x.zip'))
   const body = await res.json()
-  assert.equal(body.ok, true)
-  assert.equal(body.href, 'https://github.com/o/r/releases/download/v1/x.zip')
+  assert.equal(body.ok, false)
+  assert.ok(body.reason.includes('https://github.com/'), `原因应教写完整链接，实际：${body.reason}`)
 })
 
 test('?check=：网页路径返回 ok:false 与可读原因', async () => {
@@ -283,6 +283,25 @@ test('?check= 与真实代理的判定必须一致（同一套规则，不许漂
   }
 })
 
+test('页面归一化与后端一致：裸 owner/repo 不再补 github.com', () => {
+  const html = renderLanding(CFG)
+  const start = html.indexOf('function normalize(v){')
+  const end = html.indexOf('  // 本地形态判定')
+  assert.notEqual(start, -1, '页面里找不到 normalize')
+  assert.notEqual(end, -1, '页面里找不到 looksLikeFile')
+  const normalize = new Function(html.slice(start, end) + '\nreturn normalize;')()
+
+  // 支持：完整链接、只缺协议的完整链接
+  assert.equal(normalize('https://github.com/o/r/releases/download/v1/x.zip'), 'https://github.com/o/r/releases/download/v1/x.zip')
+  assert.equal(normalize('github.com/o/r/releases/download/v1/x.zip'), 'https://github.com/o/r/releases/download/v1/x.zip')
+  // 不支持：裸 owner/repo（v1.2.18 起与后端 buildTargetUrl 一致）
+  assert.equal(normalize('o/r/releases/download/v1/x.zip'), '')
+  assert.equal(normalize('geekMus/container-autoupdate/main/x'), '')
+  // 非 http(s) 协议仍然拒绝，空串仍然返回空
+  assert.equal(normalize('ftp://github.com/o/r/x.zip'), '')
+  assert.equal(normalize('   '), '')
+})
+
 test('页面内的本地形态判定与 ?check= 结论一致（前端不许说「能」，后端说「不能」）', async () => {
   const html = renderLanding(CFG)
   const start = html.indexOf('var HOSTS=')
@@ -312,6 +331,7 @@ test('页面内的本地形态判定与 ?check= 结论一致（前端不许说�
     'https://example.com/x.zip',
     'https://raw.githubusercontent.com/o/r/main',
     'https://gist.github.com/u/abc123',
+    'o/r/releases/download/v1/x.zip',
   ]
   for (const link of cases) {
     const clientOk = looksLikeFile(link) === ''

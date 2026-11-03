@@ -13,7 +13,6 @@
 // 请求形态：https://<你的域名><PREFIX><GitHub 原始 URL>
 //   例：PREFIX=/ 时
 //     https://gh.example.com/https://github.com/u/r/releases/download/v1/x.zip
-//     https://gh.example.com/u/r/releases/download/v1/x.zip
 // ============================================================================
 
 import { resolveConfig } from './config.js'
@@ -123,7 +122,7 @@ async function route(request, env, ctx) {
   if (q) {
     const target = buildTargetUrl(q)
     if (!target) {
-      return badRequest(request, cfg, '无法解析这个链接')
+      return badRequest(request, cfg, '链接要写完整，包含 https://github.com/')
     }
     const verdict = checkTarget(target)
     if (!verdict.ok) {
@@ -170,7 +169,7 @@ async function route(request, env, ctx) {
   // ---- 7. 代理 -----------------------------------------------------------
   const target = buildTargetUrl(stripped)
   if (!target) {
-    return badRequest(request, cfg, '无法解析这个链接')
+    return badRequest(request, cfg, '链接要写完整，包含 https://github.com/')
   }
   const verdict = checkTarget(target)
   if (!verdict.ok) {
@@ -197,7 +196,7 @@ async function route(request, env, ctx) {
 function handleCheck(raw) {
   const target = buildTargetUrl(raw)
   if (!target) {
-    return jsonResponse({ ok: false, reason: '无法解析这个链接' })
+    return jsonResponse({ ok: false, reason: '链接要写完整，包含 https://github.com/' })
   }
   const verdict = checkTarget(target)
   if (!verdict.ok) {

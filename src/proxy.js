@@ -38,14 +38,13 @@ const HOSTS_REQUIRING_FULL_URL = new Set([
 /**
  * 把「前缀后面剩下的东西」还原成真正的上游 URL。
  *
- * 支持三种输入形态：
+ * 支持两种输入形态：
  *   1. `https://github.com/u/r/releases/download/v1/x.zip`（带协议，最常见）
  *   2. `github.com/u/r/releases/download/v1/x.zip`（不带协议）
- *   3. `u/r/releases/download/v1/x.zip`（省略 github.com，即裸 owner/repo/...）
  *
- * 第 3 种是兼容写法：老的调用方会这么发，后端仍然认。但文档与错误页统一
- * 只教「写完整链接」，因为裸写法在 owner 名带点时会踩到「首段像域名」的
- * 歧义（owner.name/repo/... 会被当成域名，不是仓库）。
+ * 省略 github.com 的裸 owner/repo 写法（`u/r/...`）从 v1.2.18 起不再支持：
+ * owner 名带点时会和域名混淆（owner.name/repo/... 分不清是域名还是仓库），
+ * 文档与错误页也统一只教「写完整链接」。
  *
  * 返回 URL 对象；无法解析时返回 null。
  *
@@ -69,12 +68,12 @@ export function buildTargetUrl(rest) {
   if (/^https?:\/\//i.test(s)) {
     candidate = s
   } else {
-    // 首段是不是域名？判据：含点、且不是 `owner.repo` 这种仓库名写法。
-    // 例：`github.com/u/r/...` 首段 `github.com` 含点 → 当域名。
-    //     `geekMus/container-autoupdate/...` 首段不含点 → 当裸 owner/repo。
+    // 不带协议时，首段必须是域名（github.com / raw.githubusercontent.com 等，
+    // 判据：含点）。裸 owner/repo 路径（首段不含点）直接拒掉——
+    // owner 名带点时会和域名混淆，两端都不再猜。
     const first = s.split(/[/?#]/)[0]
-    const looksLikeHost = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(first)
-    candidate = looksLikeHost ? `https://${s}` : `https://github.com/${s}`
+    if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(first)) return null
+    candidate = `https://${s}`
   }
 
   let u

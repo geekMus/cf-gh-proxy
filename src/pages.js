@@ -361,7 +361,7 @@ export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
 // 版本号只在「页面右下角」露一次：它是元信息，不是身份，和顶栏的品牌不是一回事；
 // 放顶栏会在 390px 上跟主题按钮抢位置。改版本时这里和 package.json 要一起改，
 // 测试会核对两者一致（见 test/pages.test.js）。
-export const VERSION = '1.2.17'
+export const VERSION = '1.2.18'
 
 // 右下角那行小字。放在 .stage 之后：.stage 有 flex:1，于是它自然贴在视口底部，
 // 右边缘与顶栏图标对齐，不占中间的操作区。
@@ -505,6 +505,7 @@ ${THEME_CYCLE}
 
   // 归一化：把用户输入整理成 https 形式。
   // 这里只做格式整理，不做合法性判定——判定一律交给后端 ?check=。
+  // 裸 owner/repo 写法（省略 github.com）与后端一致：不再支持。
   function normalize(v){
     v=v.trim();
     if(!v) return '';
@@ -516,7 +517,7 @@ ${THEME_CYCLE}
     }
     var first=v.split('/')[0].split('?')[0].split('#')[0];
     if(first.indexOf('.')>0) return 'https://'+v;
-    return 'https://github.com/'+v;
+    return '';
   }
 
   // 本地形态判定：只认 GitHub 上「能下下来的文件」，规则与后端 validate.js 同形。

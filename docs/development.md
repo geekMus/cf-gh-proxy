@@ -5,7 +5,7 @@
 ## 开发
 
 ```bash
-npm test                # 107 个单元测试，纯桩无网络
+npm test                # 108 个单元测试，纯桩无网络
 npm run check           # 语法检查（六个模块逐个 node --check）
 npm run build           # 构建两个产物：_worker.min.js + _worker.js
 npm run test:build      # 验证两个产物与源码行为一致（40 项断言）
@@ -17,7 +17,7 @@ node scripts/check-workflow.cjs  # 校验 CI 配置本身（40 项断言）
 npx wrangler tail       # 看线上实时日志
 ```
 
-单元测试覆盖：配置解析、上游兼容变量、URL 构建（完整链接 / 不带协议 / 兼容的裸 owner-repo 三种输入形态）、白名单、**路径形态校验（只代理文件、不代理网页）**、**`/blob/` 改写成 raw**、响应头清洗、**响应一律 `no-store`**、**重定向跟随（本次改造的核心）**、jsDelivr 改写、**首页与错误页（内联脚本可编译、零外部资源、主题三态、页面本地形态判定与 `?check=` 逐条一致、异常兜底不产生 1101）**。
+单元测试覆盖：配置解析、上游兼容变量、URL 构建（完整链接 / 不带协议两种输入形态；裸 owner-repo 简写已废除）、白名单、**路径形态校验（只代理文件、不代理网页）**、**`/blob/` 改写成 raw**、响应头清洗、**响应一律 `no-store`**、**重定向跟随（本次改造的核心）**、jsDelivr 改写、**首页与错误页（内联脚本可编译、零外部资源、主题三态、页面本地形态判定与 `?check=` 逐条一致、页面归一化与后端一致、异常兜底不产生 1101）**。
 
 `npm run test:build` 做的事：同一组请求分别打到 `src/index.js` 和两个产物，逐项比对状态码、响应头、正文 sha256。构建产物和源码行为不一致时它会失败——这是「单文件分发」的安全网。
 
@@ -62,7 +62,7 @@ PORT=8801 node scripts/preview.mjs  # 换端口
 | 亮色 / 暗色 / 跟随系统 | `data-theme="auto"` 默认；`prefers-color-scheme` 负责跟随系统，`:root[data-theme=dark]` 负责显式选择 |
 | 不闪白 | 主题在 `<head>` 里同步落定（读 `localStorage('cfgh.theme')` 后立刻 `setAttribute`），不等 DOM 解析完 |
 | 不跑 JS 也不错乱 | 主题按钮的图标与文字由 CSS 按 `:root[data-theme]` 选择，JS 失效时仍显示正确状态 |
-| 体积 | 首页 20.6 KB，一屏之内 |
+| 体积 | 首页 19.4 KB，一屏之内 |
 | 仓库入口 | 右上角一枚 GitHub 图标（桌面端 40×40、640px 以下 36×36，与主题按钮同高、同描边），地址**写死**在 `src/pages.js` 的 `REPO_URL`，不做成环境变量；页面底部不放任何东西，所以全页外链只有这一个 |
 | 版本号 | 右下角一行 13px 小字（`v1.2.17`），右边缘与顶栏图标对齐。它是元信息不是身份，所以不进顶栏——390px 上顶栏要放品牌 + 仓库图标 + 主题按钮，再加版本号会挤。常量在 `src/pages.js` 的 `VERSION`，与 `package.json` 的一致性由测试守着 |
 | 图标 | 顶栏 logo 与 favicon 由同一段几何生成：页面 favicon 走 `faviconHref()` 的 data URI，`/favicon.ico` 走 `FAVICON_SVG`，都不发外部请求。logo 那一整块（图标 + 名字）是回首页的链接（错误页上尤其需要），`href` 跟着 `PREFIX` 走 |

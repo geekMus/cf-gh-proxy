@@ -22,9 +22,9 @@
 https://gh.example.com/https://github.com/o/r/releases/download/v1.0.0/app.zip
 ```
 
-> 裸路径（`https://gh.example.com/o/r/releases/download/v1.0.0/app.zip`）后端**仍然兼容**，老调用方不用改。
-> 但我们不再推荐：首段带点时它有歧义——`owner.name/repo/...` 里的 `owner.name` 会被当成域名而不是仓库，
-> 于是请求被拒。所以新代码请一律写完整链接。
+> 裸路径（`https://gh.example.com/o/r/releases/download/v1.0.0/app.zip`）**不再支持**（v1.2.18 起）：
+> 首段带点时它有歧义——`owner.name/repo/...` 里的 `owner.name` 会被当成域名而不是仓库，
+> 于是同一形态时而能用时而 400。所以两端统一只认完整链接，老调用方请把 `https://github.com/` 补上。
 
 ### 只代理文件，不代理网页
 

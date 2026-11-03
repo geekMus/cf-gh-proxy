@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.17 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.18 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -418,14 +418,13 @@ const HOSTS_REQUIRING_FULL_URL = new Set([
 /**
  * 把「前缀后面剩下的东西」还原成真正的上游 URL。
  *
- * 支持三种输入形态：
+ * 支持两种输入形态：
  *   1. `https://github.com/u/r/releases/download/v1/x.zip`（带协议，最常见）
  *   2. `github.com/u/r/releases/download/v1/x.zip`（不带协议）
- *   3. `u/r/releases/download/v1/x.zip`（省略 github.com，即裸 owner/repo/...）
  *
- * 第 3 种是兼容写法：老的调用方会这么发，后端仍然认。但文档与错误页统一
- * 只教「写完整链接」，因为裸写法在 owner 名带点时会踩到「首段像域名」的
- * 歧义（owner.name/repo/... 会被当成域名，不是仓库）。
+ * 省略 github.com 的裸 owner/repo 写法（`u/r/...`）从 v1.2.18 起不再支持：
+ * owner 名带点时会和域名混淆（owner.name/repo/... 分不清是域名还是仓库），
+ * 文档与错误页也统一只教「写完整链接」。
  *
  * 返回 URL 对象；无法解析时返回 null。
  *
@@ -449,12 +448,12 @@ function buildTargetUrl(rest) {
   if (/^https?:\/\//i.test(s)) {
     candidate = s
   } else {
-    // 首段是不是域名？判据：含点、且不是 `owner.repo` 这种仓库名写法。
-    // 例：`github.com/u/r/...` 首段 `github.com` 含点 → 当域名。
-    //     `geekMus/container-autoupdate/...` 首段不含点 → 当裸 owner/repo。
+    // 不带协议时，首段必须是域名（github.com / raw.githubusercontent.com 等，
+    // 判据：含点）。裸 owner/repo 路径（首段不含点）直接拒掉——
+    // owner 名带点时会和域名混淆，两端都不再猜。
     const first = s.split(/[/?#]/)[0]
-    const looksLikeHost = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(first)
-    candidate = looksLikeHost ? `https://${s}` : `https://github.com/${s}`
+    if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(first)) return null
+    candidate = `https://${s}`
   }
 
   let u
@@ -1117,7 +1116,7 @@ export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
 // 版本号只在「页面右下角」露一次：它是元信息，不是身份，和顶栏的品牌不是一回事；
 // 放顶栏会在 390px 上跟主题按钮抢位置。改版本时这里和 package.json 要一起改，
 // 测试会核对两者一致（见 test/pages.test.js）。
-export const VERSION = '1.2.17'
+export const VERSION = '1.2.18'
 
 // 右下角那行小字。放在 .stage 之后：.stage 有 flex:1，于是它自然贴在视口底部，
 // 右边缘与顶栏图标对齐，不占中间的操作区。
@@ -1261,6 +1260,7 @@ ${THEME_CYCLE}
 
   // 归一化：把用户输入整理成 https 形式。
   // 这里只做格式整理，不做合法性判定——判定一律交给后端 ?check=。
+  // 裸 owner/repo 写法（省略 github.com）与后端一致：不再支持。
   function normalize(v){
     v=v.trim();
     if(!v) return '';
@@ -1272,7 +1272,7 @@ ${THEME_CYCLE}
     }
     var first=v.split('/')[0].split('?')[0].split('#')[0];
     if(first.indexOf('.')>0) return 'https://'+v;
-    return 'https://github.com/'+v;
+    return '';
   }
 
   // 本地形态判定：只认 GitHub 上「能下下来的文件」，规则与后端 validate.js 同形。
@@ -1474,7 +1474,6 @@ function escapeHtml(s) {
 // 请求形态：https://<你的域名><PREFIX><GitHub 原始 URL>
 //   例：PREFIX=/ 时
 //     https://gh.example.com/https://github.com/u/r/releases/download/v1/x.zip
-//     https://gh.example.com/u/r/releases/download/v1/x.zip
 // ============================================================================
 
 const CORS_HEADERS = {
@@ -1579,7 +1578,7 @@ async function route(request, env, ctx) {
   if (q) {
     const target = buildTargetUrl(q)
     if (!target) {
-      return badRequest(request, cfg, '无法解析这个链接')
+      return badRequest(request, cfg, '链接要写完整，包含 https://github.com/')
     }
     const verdict = checkTarget(target)
     if (!verdict.ok) {
@@ -1626,7 +1625,7 @@ async function route(request, env, ctx) {
   // ---- 7. 代理 -----------------------------------------------------------
   const target = buildTargetUrl(stripped)
   if (!target) {
-    return badRequest(request, cfg, '无法解析这个链接')
+    return badRequest(request, cfg, '链接要写完整，包含 https://github.com/')
   }
   const verdict = checkTarget(target)
   if (!verdict.ok) {
@@ -1653,7 +1652,7 @@ async function route(request, env, ctx) {
 function handleCheck(raw) {
   const target = buildTargetUrl(raw)
   if (!target) {
-    return jsonResponse({ ok: false, reason: '无法解析这个链接' })
+    return jsonResponse({ ok: false, reason: '链接要写完整，包含 https://github.com/' })
   }
   const verdict = checkTarget(target)
   if (!verdict.ok) {

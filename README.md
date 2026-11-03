@@ -46,7 +46,7 @@ https://gh.example.com/https://github.com/owner/repo/releases/download/v1.0.0/ap
 
 ## 用法
 
-在 GitHub 链接前面加上你的服务地址（链接要写完整）：
+在 GitHub 链接前面加上你的服务地址（链接要写完整；省略 `github.com` 的裸写法从 v1.2.18 起不再支持）：
 
 ```
 https://gh.example.com/https://github.com/owner/repo/releases/download/v1.0.0/app.zip
