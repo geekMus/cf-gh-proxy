@@ -202,6 +202,14 @@ test('错误页：拿不到 origin 时退回占位符（别拼出半个 URL）',
   assert.ok(html.includes('https://your-domain/https://github.com/owner/repo/'))
 })
 
+test('错误页：不再声称「省略 https://github.com/ 也行」', () => {
+  // 文档与错误页统一口径：链接要写完整。裸路径后端仍兼容（老调用方），
+  // 但既然不再推荐，页面就不该再教用户那么写。
+  const html = renderErrorPage(CFG, 'x', 'https://gh.example.com')
+  assert.ok(!html.includes('省略'), '错误页不该再出现「省略……也行」')
+  assert.ok(!/也\s*行。/.test(html), '错误页不该再出现「也行」这种推荐语气')
+})
+
 // ---------------------------------------------------------------------------
 // 4. ?check= 接口
 // ---------------------------------------------------------------------------

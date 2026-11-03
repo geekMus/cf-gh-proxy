@@ -95,7 +95,7 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------
-  console.log('\n[4] 省略 github.com 的裸路径')
+  console.log('\n[4] 兼容：裸路径仍可用（文档与页面已不再推荐这种写法）')
   {
     const { res } = await callWorker('/geekMus/container-autoupdate/releases/latest/download/container-autoupdate.sh')
     const buf = Buffer.from(await res.arrayBuffer())

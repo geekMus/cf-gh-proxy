@@ -16,11 +16,15 @@
 
 其中 `/blob/` 是 GitHub 的**网页**（返回渲染好的 HTML，不是文件字节），Worker 会自动改写成 `raw.githubusercontent.com` 再取，所以 `blob` 链接也能拿到原始文本。
 
-省略 `https://github.com/` 也能用：
+链接要写完整，包含 `https://github.com/`：
 
 ```
-https://gh.example.com/o/r/releases/download/v1.0.0/app.zip
+https://gh.example.com/https://github.com/o/r/releases/download/v1.0.0/app.zip
 ```
+
+> 裸路径（`https://gh.example.com/o/r/releases/download/v1.0.0/app.zip`）后端**仍然兼容**，老调用方不用改。
+> 但我们不再推荐：首段带点时它有歧义——`owner.name/repo/...` 里的 `owner.name` 会被当成域名而不是仓库，
+> 于是请求被拒。所以新代码请一律写完整链接。
 
 ### 只代理文件，不代理网页
 

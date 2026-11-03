@@ -1,5 +1,5 @@
 /**
- * cf-gh-proxy v1.2.16 —— GitHub 文件加速 Cloudflare Worker
+ * cf-gh-proxy v1.2.17 —— GitHub 文件加速 Cloudflare Worker
  *
  * 这个文件是自动构建产物，请勿直接编辑。
  * 源码与构建方式：https://github.com/geekMus/cf-gh-proxy
@@ -422,6 +422,10 @@ const HOSTS_REQUIRING_FULL_URL = new Set([
  *   1. `https://github.com/u/r/releases/download/v1/x.zip`（带协议，最常见）
  *   2. `github.com/u/r/releases/download/v1/x.zip`（不带协议）
  *   3. `u/r/releases/download/v1/x.zip`（省略 github.com，即裸 owner/repo/...）
+ *
+ * 第 3 种是兼容写法：老的调用方会这么发，后端仍然认。但文档与错误页统一
+ * 只教「写完整链接」，因为裸写法在 owner 名带点时会踩到「首段像域名」的
+ * 歧义（owner.name/repo/... 会被当成域名，不是仓库）。
  *
  * 返回 URL 对象；无法解析时返回 null。
  *
@@ -1113,7 +1117,7 @@ export const REPO_URL = 'https://github.com/geekMus/cf-gh-proxy'
 // 版本号只在「页面右下角」露一次：它是元信息，不是身份，和顶栏的品牌不是一回事；
 // 放顶栏会在 390px 上跟主题按钮抢位置。改版本时这里和 package.json 要一起改，
 // 测试会核对两者一致（见 test/pages.test.js）。
-export const VERSION = '1.2.16'
+export const VERSION = '1.2.17'
 
 // 右下角那行小字。放在 .stage 之后：.stage 有 flex:1，于是它自然贴在视口底部，
 // 右边缘与顶栏图标对齐，不占中间的操作区。
@@ -1391,7 +1395,6 @@ function renderErrorPage(cfg, reason, origin = '') {
     <div class="sec-h"><h2>正确形态</h2><p>在链接前面加服务地址</p></div>
     <div class="paths">
       <div class="path-grid"><div class="item"><span class="k">${escapeHtml(ex)}</span></div></div>
-      <p class="paths-foot">省略 <code>https://github.com/</code> 也行。</p>
     </div>
   </div>
 

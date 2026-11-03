@@ -44,7 +44,7 @@ jsproxy         ────┘         (MIT, CMLiussss)
 | 死代码 | `exp4` 分支永远到不了（前面已被吃掉），分支上的 jsDelivr 重定向失效 | `JSDELIVR` 是真正生效的配置 |
 | 响应头 | 原样透传（含 `Set-Cookie`、CSP、Cloudflare/Azure 内部头） | 剥掉不该透传的，保留 `content-type` / `content-range` / `etag`；代理响应一律补 `access-control-allow-origin: *`（说明页与 favicon 是自家页面，不加） 等 |
 | 代码组织 | 单个 480 行 `worker.js`，含内嵌 HTML | `src/` 分 6 个模块 + `test/` 105 个测试 |
-| 页面 | 单套暗色配色，无主题切换 | 亮色 / 暗色 / 跟随系统三态，零外部资源，一屏之内，首页约 20.5 KB |
+| 页面 | 单套暗色配色，无主题切换 | 亮色 / 暗色 / 跟随系统三态，零外部资源，一屏之内，首页约 20.6 KB |
 | 异常兜底 | 无，抛出异常即 Cloudflare 1101 空白页 | `fetch` 外层 `try/catch` → 500 + 可读原因 |
 
 ### 许可证
@@ -63,7 +63,7 @@ Copyright (c) 2026 cf-gh-proxy contributors
 如果你现在用着 `cmliu/CF-Workers-GitHub`，想换到本项目：
 
 - **环境变量**：`URL` / `URL302` 完全兼容；`PREFIX` / `UPSTREAM_TIMEOUT` / `MAX_REDIRECTS` / `ALLOW_AUTH` / `BLOCKED_UA`（含兼容别名 `UA`） / `JSDELIVR` 是新增的
-- **不需要改调用方**：链接形态、`?q=` 入口、裸 owner/repo 写法都一样
+- **不需要改调用方**：链接形态、`?q=` 入口都一样
 - **会变的行为**：非 GitHub 域名现在返回 400（上游是放行）；客户端 Cookie 不再转发
 - **部署方式**：两种都行——粘 [`_worker.min.js`](../_worker.min.js) 到 Dashboard（和上游一样），或 `npm run deploy`（部署的也是构建出来的同一个单文件）
 

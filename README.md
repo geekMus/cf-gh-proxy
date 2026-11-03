@@ -46,16 +46,10 @@ https://gh.example.com/https://github.com/owner/repo/releases/download/v1.0.0/ap
 
 ## 用法
 
-在 GitHub 链接前面加上你的服务地址：
+在 GitHub 链接前面加上你的服务地址（链接要写完整）：
 
 ```
 https://gh.example.com/https://github.com/owner/repo/releases/download/v1.0.0/app.zip
-```
-
-`https://github.com/` 可以省略：
-
-```
-https://gh.example.com/owner/repo/releases/download/v1.0.0/app.zip
 ```
 
 支持的链接：release 资产、`latest/download`、`archive` 源码包、`raw` / `blob` 单文件、`raw.githubusercontent.com` 直链、Gist、`api.github.com`。

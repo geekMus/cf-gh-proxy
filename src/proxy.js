@@ -43,6 +43,10 @@ const HOSTS_REQUIRING_FULL_URL = new Set([
  *   2. `github.com/u/r/releases/download/v1/x.zip`（不带协议）
  *   3. `u/r/releases/download/v1/x.zip`（省略 github.com，即裸 owner/repo/...）
  *
+ * 第 3 种是兼容写法：老的调用方会这么发，后端仍然认。但文档与错误页统一
+ * 只教「写完整链接」，因为裸写法在 owner 名带点时会踩到「首段像域名」的
+ * 歧义（owner.name/repo/... 会被当成域名，不是仓库）。
+ *
  * 返回 URL 对象；无法解析时返回 null。
  *
  * @param {string} rest 去掉前缀后的原始路径（可带 query）
